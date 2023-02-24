@@ -1,5 +1,5 @@
 /*
- * Copyright 2006-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2006-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -38,12 +38,6 @@
  * registers, which should give better "all round" results, in other
  * words reasonable performance even with not so modern compilers.
  */
-
-/*
- * Camellia low level APIs are deprecated for public use, but still ok for
- * internal use.
- */
-#include "internal/deprecated.h"
 
 #include <openssl/camellia.h>
 #include "cmll_local.h"
@@ -499,9 +493,9 @@ void Camellia_DecryptBlock_Rounds(int grandRounds, const u8 ciphertext[],
     PUTU32(plaintext + 12, s1);
 }
 
-void Camellia_DecryptBlock(int keyBitLength, const u8 ciphertext[],
-                           const KEY_TABLE_TYPE keyTable, u8 plaintext[])
+void Camellia_DecryptBlock(int keyBitLength, const u8 plaintext[],
+                           const KEY_TABLE_TYPE keyTable, u8 ciphertext[])
 {
     Camellia_DecryptBlock_Rounds(keyBitLength == 128 ? 3 : 4,
-                                 ciphertext, keyTable, plaintext);
+                                 plaintext, keyTable, ciphertext);
 }

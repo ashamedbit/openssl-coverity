@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -9,7 +9,6 @@
 
 #ifndef OPENSSL_FIPS_NAMES_H
 # define OPENSSL_FIPS_NAMES_H
-# pragma once
 
 # ifdef __cplusplus
 extern "C" {
@@ -23,7 +22,7 @@ extern "C" {
  * The calculated MAC of the module file (Used for FIPS Self Testing)
  * Type: OSSL_PARAM_UTF8_STRING
  */
-# define OSSL_PROV_FIPS_PARAM_MODULE_MAC      "module-mac"
+# define OSSL_PROV_FIPS_PARAM_MODULE_MAC      "module-checksum"
 /*
  * A version number for the fips install process (Used for FIPS Self Testing)
  * Type: OSSL_PARAM_UTF8_STRING
@@ -33,25 +32,12 @@ extern "C" {
  * The calculated MAC of the install status indicator (Used for FIPS Self Testing)
  * Type: OSSL_PARAM_UTF8_STRING
  */
-# define OSSL_PROV_FIPS_PARAM_INSTALL_MAC     "install-mac"
+# define OSSL_PROV_FIPS_PARAM_INSTALL_MAC     "install-checksum"
 /*
  * The install status indicator (Used for FIPS Self Testing)
  * Type: OSSL_PARAM_UTF8_STRING
  */
 # define OSSL_PROV_FIPS_PARAM_INSTALL_STATUS  "install-status"
-
-/*
- * A boolean that determines if the FIPS conditional test errors result in
- * the module entering an error state.
- * Type: OSSL_PARAM_UTF8_STRING
- */
-# define OSSL_PROV_FIPS_PARAM_CONDITIONAL_ERRORS "conditional-errors"
-
-/*
- * A boolean that determines if the runtime FIPS security checks are performed.
- * Type: OSSL_PARAM_UTF8_STRING
- */
-# define OSSL_PROV_FIPS_PARAM_SECURITY_CHECKS "security-checks"
 
 # ifdef __cplusplus
 }

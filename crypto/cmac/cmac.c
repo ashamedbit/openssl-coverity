@@ -1,17 +1,11 @@
 /*
- * Copyright 2010-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2010-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
-
-/*
- * CMAC low level APIs are deprecated for public use, but still ok for internal
- * use.
- */
-#include "internal/deprecated.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,7 +48,7 @@ CMAC_CTX *CMAC_CTX_new(void)
     CMAC_CTX *ctx;
 
     if ((ctx = OPENSSL_malloc(sizeof(*ctx))) == NULL) {
-        ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
+        CRYPTOerr(CRYPTO_F_CMAC_CTX_NEW, ERR_R_MALLOC_FAILURE);
         return NULL;
     }
     ctx->cctx = EVP_CIPHER_CTX_new();
@@ -96,7 +90,7 @@ int CMAC_CTX_copy(CMAC_CTX *out, const CMAC_CTX *in)
 
     if (in->nlast_block == -1)
         return 0;
-    if ((bl = EVP_CIPHER_CTX_get_block_size(in->cctx)) < 0)
+    if ((bl = EVP_CIPHER_CTX_block_size(in->cctx)) < 0)
         return 0;
     if (!EVP_CIPHER_CTX_copy(out->cctx, in->cctx))
         return 0;
@@ -120,32 +114,26 @@ int CMAC_Init(CMAC_CTX *ctx, const void *key, size_t keylen,
             return 0;
         if (!EVP_EncryptInit_ex(ctx->cctx, NULL, NULL, NULL, zero_iv))
             return 0;
-        memset(ctx->tbl, 0, EVP_CIPHER_CTX_get_block_size(ctx->cctx));
+        memset(ctx->tbl, 0, EVP_CIPHER_CTX_block_size(ctx->cctx));
         ctx->nlast_block = 0;
         return 1;
     }
     /* Initialise context */
-    if (cipher != NULL) {
-        /* Ensure we can't use this ctx until we also have a key */
-        ctx->nlast_block = -1;
-        if (!EVP_EncryptInit_ex(ctx->cctx, cipher, impl, NULL, NULL))
-            return 0;
-    }
+    if (cipher && !EVP_EncryptInit_ex(ctx->cctx, cipher, impl, NULL, NULL))
+        return 0;
     /* Non-NULL key means initialisation complete */
-    if (key != NULL) {
+    if (key) {
         int bl;
 
-        /* If anything fails then ensure we can't use this ctx */
-        ctx->nlast_block = -1;
-        if (EVP_CIPHER_CTX_get0_cipher(ctx->cctx) == NULL)
+        if (!EVP_CIPHER_CTX_cipher(ctx->cctx))
             return 0;
-        if (EVP_CIPHER_CTX_set_key_length(ctx->cctx, keylen) <= 0)
+        if (!EVP_CIPHER_CTX_set_key_length(ctx->cctx, keylen))
             return 0;
         if (!EVP_EncryptInit_ex(ctx->cctx, NULL, NULL, key, zero_iv))
             return 0;
-        if ((bl = EVP_CIPHER_CTX_get_block_size(ctx->cctx)) < 0)
+        if ((bl = EVP_CIPHER_CTX_block_size(ctx->cctx)) < 0)
             return 0;
-        if (EVP_Cipher(ctx->cctx, ctx->tbl, zero_iv, bl) <= 0)
+        if (!EVP_Cipher(ctx->cctx, ctx->tbl, zero_iv, bl))
             return 0;
         make_kn(ctx->k1, ctx->tbl, bl);
         make_kn(ctx->k2, ctx->k1, bl);
@@ -169,7 +157,7 @@ int CMAC_Update(CMAC_CTX *ctx, const void *in, size_t dlen)
         return 0;
     if (dlen == 0)
         return 1;
-    if ((bl = EVP_CIPHER_CTX_get_block_size(ctx->cctx)) < 0)
+    if ((bl = EVP_CIPHER_CTX_block_size(ctx->cctx)) < 0)
         return 0;
     /* Copy into partial block if we need to */
     if (ctx->nlast_block > 0) {
@@ -186,12 +174,12 @@ int CMAC_Update(CMAC_CTX *ctx, const void *in, size_t dlen)
             return 1;
         data += nleft;
         /* Else not final block so encrypt it */
-        if (EVP_Cipher(ctx->cctx, ctx->tbl, ctx->last_block, bl) <= 0)
+        if (!EVP_Cipher(ctx->cctx, ctx->tbl, ctx->last_block, bl))
             return 0;
     }
     /* Encrypt all but one of the complete blocks left */
     while (dlen > (size_t)bl) {
-        if (EVP_Cipher(ctx->cctx, ctx->tbl, data, bl) <= 0)
+        if (!EVP_Cipher(ctx->cctx, ctx->tbl, data, bl))
             return 0;
         dlen -= bl;
         data += bl;
@@ -209,7 +197,7 @@ int CMAC_Final(CMAC_CTX *ctx, unsigned char *out, size_t *poutlen)
 
     if (ctx->nlast_block == -1)
         return 0;
-    if ((bl = EVP_CIPHER_CTX_get_block_size(ctx->cctx)) < 0)
+    if ((bl = EVP_CIPHER_CTX_block_size(ctx->cctx)) < 0)
         return 0;
     if (poutlen != NULL)
         *poutlen = (size_t)bl;
@@ -227,7 +215,7 @@ int CMAC_Final(CMAC_CTX *ctx, unsigned char *out, size_t *poutlen)
         for (i = 0; i < bl; i++)
             out[i] = ctx->last_block[i] ^ ctx->k2[i];
     }
-    if (EVP_Cipher(ctx->cctx, out, out, bl) <= 0) {
+    if (!EVP_Cipher(ctx->cctx, out, out, bl)) {
         OPENSSL_cleanse(out, bl);
         return 0;
     }

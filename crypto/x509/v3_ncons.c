@@ -1,5 +1,5 @@
 /*
- * Copyright 2003-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2003-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -9,7 +9,6 @@
 
 #include "internal/cryptlib.h"
 #include "internal/numbers.h"
-#include "internal/safe_math.h"
 #include <stdio.h>
 #include "crypto/asn1.h"
 #include <openssl/asn1t.h>
@@ -18,10 +17,7 @@
 #include <openssl/bn.h>
 
 #include "crypto/x509.h"
-#include "crypto/punycode.h"
 #include "ext_dat.h"
-
-OSSL_SAFE_MATH_SIGNED(int, int)
 
 static void *v2i_NAME_CONSTRAINTS(const X509V3_EXT_METHOD *method,
                                   X509V3_CTX *ctx,
@@ -35,14 +31,13 @@ static int print_nc_ipadd(BIO *bp, ASN1_OCTET_STRING *ip);
 
 static int nc_match(GENERAL_NAME *gen, NAME_CONSTRAINTS *nc);
 static int nc_match_single(GENERAL_NAME *sub, GENERAL_NAME *gen);
-static int nc_dn(const X509_NAME *sub, const X509_NAME *nm);
+static int nc_dn(X509_NAME *sub, X509_NAME *nm);
 static int nc_dns(ASN1_IA5STRING *sub, ASN1_IA5STRING *dns);
 static int nc_email(ASN1_IA5STRING *sub, ASN1_IA5STRING *eml);
-static int nc_email_eai(ASN1_TYPE *emltype, ASN1_IA5STRING *base);
 static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base);
 static int nc_ip(ASN1_OCTET_STRING *ip, ASN1_OCTET_STRING *base);
 
-const X509V3_EXT_METHOD ossl_v3_name_constraints = {
+const X509V3_EXT_METHOD v3_name_constraints = {
     NID_name_constraints, 0,
     ASN1_ITEM_ref(NAME_CONSTRAINTS),
     0, 0, 0, 0,
@@ -69,31 +64,8 @@ ASN1_SEQUENCE(NAME_CONSTRAINTS) = {
 IMPLEMENT_ASN1_ALLOC_FUNCTIONS(GENERAL_SUBTREE)
 IMPLEMENT_ASN1_ALLOC_FUNCTIONS(NAME_CONSTRAINTS)
 
-
-#define IA5_OFFSET_LEN(ia5base, offset) \
-    ((ia5base)->length - ((unsigned char *)(offset) - (ia5base)->data))
-
-/* Like memchr but for ASN1_IA5STRING. Additionally you can specify the
- * starting point to search from
- */
-# define ia5memchr(str, start, c) memchr(start, c, IA5_OFFSET_LEN(str, start))
-
-/* Like memrrchr but for ASN1_IA5STRING */
-static char *ia5memrchr(ASN1_IA5STRING *str, int c)
-{
-    int i;
-
-    for (i = str->length; i > 0 && str->data[i - 1] != c; i--);
-
-    if (i == 0)
-        return NULL;
-
-    return (char *)&str->data[i - 1];
-}
-
 /*
- * We cannot use strncasecmp here because that applies locale specific rules. It
- * also doesn't work with ASN1_STRINGs that may have embedded NUL characters.
+ * We cannot use strncasecmp here because that applies locale specific rules.
  * For example in Turkish 'I' is not the uppercase character for 'i'. We need to
  * do a simple ASCII case comparison ignoring the locale (that is why we use
  * numeric constants below).
@@ -118,10 +90,18 @@ static int ia5ncasecmp(const char *s1, const char *s2, size_t n)
 
             /* c1 > c2 */
             return 1;
+        } else if (*s1 == 0) {
+            /* If we get here we know that *s2 == 0 too */
+            return 0;
         }
     }
 
     return 0;
+}
+
+static int ia5casecmp(const char *s1, const char *s2)
+{
+    return ia5ncasecmp(s1, s2, SIZE_MAX);
 }
 
 static void *v2i_NAME_CONSTRAINTS(const X509V3_EXT_METHOD *method,
@@ -138,14 +118,14 @@ static void *v2i_NAME_CONSTRAINTS(const X509V3_EXT_METHOD *method,
         goto memerr;
     for (i = 0; i < sk_CONF_VALUE_num(nval); i++) {
         val = sk_CONF_VALUE_value(nval, i);
-        if (HAS_PREFIX(val->name, "permitted") && val->name[9]) {
+        if (strncmp(val->name, "permitted", 9) == 0 && val->name[9]) {
             ptree = &ncons->permittedSubtrees;
             tval.name = val->name + 10;
-        } else if (HAS_PREFIX(val->name, "excluded") && val->name[8]) {
+        } else if (strncmp(val->name, "excluded", 8) == 0 && val->name[8]) {
             ptree = &ncons->excludedSubtrees;
             tval.name = val->name + 9;
         } else {
-            ERR_raise(ERR_LIB_X509V3, X509V3_R_INVALID_SYNTAX);
+            X509V3err(X509V3_F_V2I_NAME_CONSTRAINTS, X509V3_R_INVALID_SYNTAX);
             goto err;
         }
         tval.value = val->value;
@@ -164,7 +144,7 @@ static void *v2i_NAME_CONSTRAINTS(const X509V3_EXT_METHOD *method,
     return ncons;
 
  memerr:
-    ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
+    X509V3err(X509V3_F_V2I_NAME_CONSTRAINTS, ERR_R_MALLOC_FAILURE);
  err:
     NAME_CONSTRAINTS_free(ncons);
     GENERAL_SUBTREE_free(sub);
@@ -208,33 +188,42 @@ static int do_i2r_name_constraints(const X509V3_EXT_METHOD *method,
 
 static int print_nc_ipadd(BIO *bp, ASN1_OCTET_STRING *ip)
 {
-    /* ip->length should be 8 or 32 and len1 == len2 == 4 or len1 == len2 == 16 */
-    int len1 = ip->length >= 16 ? 16 : ip->length >= 4 ? 4 : ip->length;
-    int len2 = ip->length - len1;
-    char *ip1 = ossl_ipaddr_to_asc(ip->data, len1);
-    char *ip2 = ossl_ipaddr_to_asc(ip->data + len1, len2);
-    int ret = ip1 != NULL && ip2 != NULL
-        && BIO_printf(bp, "IP:%s/%s", ip1, ip2) > 0;
-
-    OPENSSL_free(ip1);
-    OPENSSL_free(ip2);
-    return ret;
+    int i, len;
+    unsigned char *p;
+    p = ip->data;
+    len = ip->length;
+    BIO_puts(bp, "IP:");
+    if (len == 8) {
+        BIO_printf(bp, "%d.%d.%d.%d/%d.%d.%d.%d",
+                   p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+    } else if (len == 32) {
+        for (i = 0; i < 16; i++) {
+            BIO_printf(bp, "%X", p[0] << 8 | p[1]);
+            p += 2;
+            if (i == 7)
+                BIO_puts(bp, "/");
+            else if (i != 15)
+                BIO_puts(bp, ":");
+        }
+    } else
+        BIO_printf(bp, "IP Address:<invalid>");
+    return 1;
 }
 
 #define NAME_CHECK_MAX (1 << 20)
 
 static int add_lengths(int *out, int a, int b)
 {
-    int err = 0;
-
     /* sk_FOO_num(NULL) returns -1 but is effectively 0 when iterating. */
     if (a < 0)
         a = 0;
     if (b < 0)
         b = 0;
 
-    *out = safe_add_int(a, b, &err);
-    return !err;
+    if (a > INT_MAX - b)
+        return 0;
+    *out = a + b;
+    return 1;
 }
 
 /*-
@@ -352,7 +341,7 @@ static int cn2dnsid(ASN1_STRING *cn, unsigned char **dnsid, size_t *idlen)
         --utf8_length;
 
     /* Reject *embedded* NULs */
-    if (memchr(utf8_value, 0, utf8_length) != NULL) {
+    if ((size_t)utf8_length != strlen((char *)utf8_value)) {
         OPENSSL_free(utf8_value);
         return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
     }
@@ -411,7 +400,7 @@ static int cn2dnsid(ASN1_STRING *cn, unsigned char **dnsid, size_t *idlen)
 int NAME_CONSTRAINTS_check_CN(X509 *x, NAME_CONSTRAINTS *nc)
 {
     int r, i;
-    const X509_NAME *nm = X509_get_subject_name(x);
+    X509_NAME *nm = X509_get_subject_name(x);
     ASN1_STRING stmp;
     GENERAL_NAME gntmp;
 
@@ -475,14 +464,6 @@ static int nc_match(GENERAL_NAME *gen, NAME_CONSTRAINTS *nc)
 {
     GENERAL_SUBTREE *sub;
     int i, r, match = 0;
-    /*
-     * We need to compare not gen->type field but an "effective" type because
-     * the otherName field may contain EAI email address treated specially
-     * according to RFC 8398, section 6
-     */
-    int effective_type = ((gen->type == GEN_OTHERNAME) &&
-                          (OBJ_obj2nid(gen->d.otherName->type_id) ==
-                           NID_id_on_SmtpUTF8Mailbox)) ? GEN_EMAIL : gen->type;
 
     /*
      * Permitted subtrees: if any subtrees exist of matching the type at
@@ -491,7 +472,7 @@ static int nc_match(GENERAL_NAME *gen, NAME_CONSTRAINTS *nc)
 
     for (i = 0; i < sk_GENERAL_SUBTREE_num(nc->permittedSubtrees); i++) {
         sub = sk_GENERAL_SUBTREE_value(nc->permittedSubtrees, i);
-        if (effective_type != sub->base->type)
+        if (gen->type != sub->base->type)
             continue;
         if (!nc_minmax_valid(sub))
             return X509_V_ERR_SUBTREE_MINMAX;
@@ -514,7 +495,7 @@ static int nc_match(GENERAL_NAME *gen, NAME_CONSTRAINTS *nc)
 
     for (i = 0; i < sk_GENERAL_SUBTREE_num(nc->excludedSubtrees); i++) {
         sub = sk_GENERAL_SUBTREE_value(nc->excludedSubtrees, i);
-        if (effective_type != sub->base->type)
+        if (gen->type != sub->base->type)
             continue;
         if (!nc_minmax_valid(sub))
             return X509_V_ERR_SUBTREE_MINMAX;
@@ -533,14 +514,7 @@ static int nc_match(GENERAL_NAME *gen, NAME_CONSTRAINTS *nc)
 
 static int nc_match_single(GENERAL_NAME *gen, GENERAL_NAME *base)
 {
-    switch (gen->type) {
-    case GEN_OTHERNAME:
-        /*
-         * We are here only when we have SmtpUTF8 name,
-         * so we match the value of othername with base->d.rfc822Name
-         */
-        return nc_email_eai(gen->d.otherName->value, base->d.rfc822Name);
-
+    switch (base->type) {
     case GEN_DIRNAME:
         return nc_dn(gen->d.directoryName, base->d.directoryName);
 
@@ -569,7 +543,7 @@ static int nc_match_single(GENERAL_NAME *gen, GENERAL_NAME *base)
  * subset of the name.
  */
 
-static int nc_dn(const X509_NAME *nm, const X509_NAME *base)
+static int nc_dn(X509_NAME *nm, X509_NAME *base)
 {
     /* Ensure canonical encodings are up to date.  */
     if (nm->modified && i2d_X509_NAME(nm, NULL) < 0)
@@ -589,12 +563,8 @@ static int nc_dns(ASN1_IA5STRING *dns, ASN1_IA5STRING *base)
     char *dnsptr = (char *)dns->data;
 
     /* Empty matches everything */
-    if (base->length == 0)
+    if (*baseptr == '\0')
         return X509_V_OK;
-
-    if (dns->length < base->length)
-        return X509_V_ERR_PERMITTED_VIOLATION;
-
     /*
      * Otherwise can add zero or more components on the left so compare RHS
      * and if dns is longer and expect '.' as preceding character.
@@ -605,107 +575,27 @@ static int nc_dns(ASN1_IA5STRING *dns, ASN1_IA5STRING *base)
             return X509_V_ERR_PERMITTED_VIOLATION;
     }
 
-    if (ia5ncasecmp(baseptr, dnsptr, base->length))
+    if (ia5casecmp(baseptr, dnsptr))
         return X509_V_ERR_PERMITTED_VIOLATION;
 
     return X509_V_OK;
 
 }
 
-/*
- * This function implements comparison between ASCII/U-label in emltype
- * and A-label in base according to RFC 8398, section 6.
- * Convert base to U-label and ASCII-parts of domain names, for base
- * Octet-to-octet comparison of `emltype` and `base` hostname parts
- * (ASCII-parts should be compared in case-insensitive manner)
- */
-static int nc_email_eai(ASN1_TYPE *emltype, ASN1_IA5STRING *base)
-{
-    ASN1_UTF8STRING *eml;
-    char *baseptr = NULL;
-    const char *emlptr;
-    const char *emlat;
-    char ulabel[256];
-    size_t size = sizeof(ulabel) - 1;
-    int ret = X509_V_OK;
-    size_t emlhostlen;
-
-    /* We do not accept embedded NUL characters */
-    if (base->length > 0 && memchr(base->data, 0, base->length) != NULL)
-        return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
-
-    /* 'base' may not be NUL terminated. Create a copy that is */
-    baseptr = OPENSSL_strndup((char *)base->data, base->length);
-    if (baseptr == NULL)
-        return X509_V_ERR_OUT_OF_MEM;
-
-    if (emltype->type != V_ASN1_UTF8STRING) {
-        ret = X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
-        goto end;
-    }
-
-    eml = emltype->value.utf8string;
-    emlptr = (char *)eml->data;
-    emlat = ia5memrchr(eml, '@');
-
-    if (emlat == NULL) {
-        ret = X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
-        goto end;
-    }
-
-    memset(ulabel, 0, sizeof(ulabel));
-    /* Special case: initial '.' is RHS match */
-    if (*baseptr == '.') {
-        ulabel[0] = '.';
-        size -= 1;
-        if (ossl_a2ulabel(baseptr, ulabel + 1, &size) <= 0) {
-            ret = X509_V_ERR_UNSPECIFIED;
-            goto end;
-        }
-
-        if ((size_t)eml->length > strlen(ulabel)) {
-            emlptr += eml->length - (strlen(ulabel));
-            /* X509_V_OK */
-            if (ia5ncasecmp(ulabel, emlptr, strlen(ulabel)) == 0)
-                goto end;
-        }
-        ret = X509_V_ERR_PERMITTED_VIOLATION;
-        goto end;
-    }
-
-    if (ossl_a2ulabel(baseptr, ulabel, &size) <= 0) {
-        ret = X509_V_ERR_UNSPECIFIED;
-        goto end;
-    }
-    /* Just have hostname left to match: case insensitive */
-    emlptr = emlat + 1;
-    emlhostlen = IA5_OFFSET_LEN(eml, emlptr);
-    if (emlhostlen != strlen(ulabel)
-            || ia5ncasecmp(ulabel, emlptr, emlhostlen) != 0) {
-        ret = X509_V_ERR_PERMITTED_VIOLATION;
-        goto end;
-    }
-
- end:
-    OPENSSL_free(baseptr);
-    return ret;
-}
-
 static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
 {
     const char *baseptr = (char *)base->data;
     const char *emlptr = (char *)eml->data;
-    const char *baseat = ia5memrchr(base, '@');
-    const char *emlat = ia5memrchr(eml, '@');
-    size_t basehostlen, emlhostlen;
 
+    const char *baseat = strchr(baseptr, '@');
+    const char *emlat = strchr(emlptr, '@');
     if (!emlat)
         return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
     /* Special case: initial '.' is RHS match */
-    if (!baseat && base->length > 0 && (*baseptr == '.')) {
+    if (!baseat && (*baseptr == '.')) {
         if (eml->length > base->length) {
             emlptr += eml->length - base->length;
-            if (ia5ncasecmp(baseptr, emlptr, base->length) == 0)
+            if (ia5casecmp(baseptr, emlptr) == 0)
                 return X509_V_OK;
         }
         return X509_V_ERR_PERMITTED_VIOLATION;
@@ -717,9 +607,6 @@ static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
         if (baseat != baseptr) {
             if ((baseat - baseptr) != (emlat - emlptr))
                 return X509_V_ERR_PERMITTED_VIOLATION;
-            if (memchr(baseptr, 0, baseat - baseptr) ||
-                memchr(emlptr, 0, emlat - emlptr))
-                return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
             /* Case sensitive match of local part */
             if (strncmp(baseptr, emlptr, emlat - emlptr))
                 return X509_V_ERR_PERMITTED_VIOLATION;
@@ -728,10 +615,8 @@ static int nc_email(ASN1_IA5STRING *eml, ASN1_IA5STRING *base)
         baseptr = baseat + 1;
     }
     emlptr = emlat + 1;
-    basehostlen = IA5_OFFSET_LEN(base, baseptr);
-    emlhostlen = IA5_OFFSET_LEN(eml, emlptr);
     /* Just have hostname left to match: case insensitive */
-    if (basehostlen != emlhostlen || ia5ncasecmp(baseptr, emlptr, emlhostlen))
+    if (ia5casecmp(baseptr, emlptr))
         return X509_V_ERR_PERMITTED_VIOLATION;
 
     return X509_V_OK;
@@ -742,14 +627,11 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
 {
     const char *baseptr = (char *)base->data;
     const char *hostptr = (char *)uri->data;
-    const char *p = ia5memchr(uri, (char *)uri->data, ':');
+    const char *p = strchr(hostptr, ':');
     int hostlen;
 
     /* Check for foo:// and skip past it */
-    if (p == NULL
-            || IA5_OFFSET_LEN(uri, p) < 3
-            || p[1] != '/'
-            || p[2] != '/')
+    if (p == NULL || p[1] != '/' || p[2] != '/')
         return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
     hostptr = p + 3;
 
@@ -757,13 +639,13 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
 
     /* Look for a port indicator as end of hostname first */
 
-    p = ia5memchr(uri, hostptr, ':');
+    p = strchr(hostptr, ':');
     /* Otherwise look for trailing slash */
     if (p == NULL)
-        p = ia5memchr(uri, hostptr, '/');
+        p = strchr(hostptr, '/');
 
     if (p == NULL)
-        hostlen = IA5_OFFSET_LEN(uri, hostptr);
+        hostlen = strlen(hostptr);
     else
         hostlen = p - hostptr;
 
@@ -771,7 +653,7 @@ static int nc_uri(ASN1_IA5STRING *uri, ASN1_IA5STRING *base)
         return X509_V_ERR_UNSUPPORTED_NAME_SYNTAX;
 
     /* Special case: initial '.' is RHS match */
-    if (base->length > 0 && *baseptr == '.') {
+    if (*baseptr == '.') {
         if (hostlen > base->length) {
             p = hostptr + hostlen - base->length;
             if (ia5ncasecmp(p, baseptr, base->length) == 0)

@@ -2,9 +2,6 @@
 # OpenSSL example configuration file for automated certificate creation.
 #
 
-# Comment out the next line to ignore configuration errors
-config_diagnostics = 1
-
 # This definition stops the following lines choking if HOME or CN
 # is undefined.
 HOME			= .
@@ -53,15 +50,6 @@ keyUsage=critical, keyAgreement
 # PKIX recommendations harmless if included in all certificates.
 subjectKeyIdentifier=hash
 authorityKeyIdentifier=keyid
-
-[ codesign_cert ]
-
-# These extensions are added when 'ca' signs a request for a code-signing
-# end-entity certificate
-
-basicConstraints=CA:FALSE
-keyUsage=critical, digitalSignature
-extendedKeyUsage=codeSigning
 
 [ v3_ca ]
 

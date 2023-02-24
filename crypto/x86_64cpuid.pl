@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2005-2021 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2005-2018 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -42,7 +42,6 @@ print<<___;
 .align	16
 OPENSSL_atomic_add:
 .cfi_startproc
-	endbranch
 	movl	($arg1),%eax
 .Lspin:	leaq	($arg2,%rax),%r8
 	.byte	0xf0		# lock
@@ -59,7 +58,6 @@ OPENSSL_atomic_add:
 .align	16
 OPENSSL_rdtsc:
 .cfi_startproc
-	endbranch
 	rdtsc
 	shl	\$32,%rdx
 	or	%rdx,%rax
@@ -72,7 +70,6 @@ OPENSSL_rdtsc:
 .align	16
 OPENSSL_ia32_cpuid:
 .cfi_startproc
-	endbranch
 	mov	%rbx,%r8		# save %rbx
 .cfi_register	%rbx,%r8
 
@@ -215,7 +212,7 @@ OPENSSL_ia32_cpuid:
 	cmp	\$0xe6,%eax
 	je	.Ldone
 	andl	\$0x3fdeffff,8(%rdi)	# ~(1<<31|1<<30|1<<21|1<<16)
-					# clear AVX512F+BW+VL+IFMA, all of
+					# clear AVX512F+BW+VL+FIMA, all of
 					# them are EVEX-encoded, which requires
 					# ZMM state support even if one uses
 					# only XMM and YMM :-(
@@ -242,7 +239,6 @@ OPENSSL_ia32_cpuid:
 .align  16
 OPENSSL_cleanse:
 .cfi_startproc
-	endbranch
 	xor	%rax,%rax
 	cmp	\$15,$arg2
 	jae	.Lot
@@ -280,7 +276,6 @@ OPENSSL_cleanse:
 .align  16
 CRYPTO_memcmp:
 .cfi_startproc
-	endbranch
 	xor	%rax,%rax
 	xor	%r10,%r10
 	cmp	\$0,$arg3
@@ -319,7 +314,6 @@ print<<___ if (!$win64);
 .align	16
 OPENSSL_wipe_cpu:
 .cfi_startproc
-	endbranch
 	pxor	%xmm0,%xmm0
 	pxor	%xmm1,%xmm1
 	pxor	%xmm2,%xmm2
@@ -384,7 +378,6 @@ print<<___;
 .align	16
 OPENSSL_instrument_bus:
 .cfi_startproc
-	endbranch
 	mov	$arg1,$out	# tribute to Win64
 	mov	$arg2,$cnt
 	mov	$arg2,$max
@@ -419,7 +412,6 @@ OPENSSL_instrument_bus:
 .align	16
 OPENSSL_instrument_bus2:
 .cfi_startproc
-	endbranch
 	mov	$arg1,$out	# tribute to Win64
 	mov	$arg2,$cnt
 	mov	$arg3,$max
@@ -475,7 +467,6 @@ print<<___;
 .align	16
 OPENSSL_ia32_${rdop}_bytes:
 .cfi_startproc
-	endbranch
 	xor	%rax, %rax	# return value
 	cmp	\$0,$arg2
 	je	.Ldone_${rdop}_bytes
@@ -519,4 +510,4 @@ ___
 gen_random("rdrand");
 gen_random("rdseed");
 
-close STDOUT or die "error closing STDOUT: $!";	# flush
+close STDOUT;	# flush

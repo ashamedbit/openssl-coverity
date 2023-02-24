@@ -1,3 +1,4 @@
 LIBS=../../libcrypto
 SOURCE[../../libcrypto]=\
-	siphash.c
+	siphash.c \
+	siphash_ameth.c

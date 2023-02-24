@@ -1,5 +1,5 @@
 /*
- * Copyright 2007-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2007-2019 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright Nokia 2007-2019
  * Copyright Siemens AG 2015-2019
  *
@@ -38,19 +38,10 @@ int ossl_cmp_hdr_get_pvno(const OSSL_CMP_PKIHEADER *hdr)
     return (int)pvno;
 }
 
-int ossl_cmp_hdr_get_protection_nid(const OSSL_CMP_PKIHEADER *hdr)
-{
-    if (!ossl_assert(hdr != NULL)
-            || hdr->protectionAlg == NULL)
-        return NID_undef;
-    return OBJ_obj2nid(hdr->protectionAlg->algorithm);
-}
-
-ASN1_OCTET_STRING *OSSL_CMP_HDR_get0_transactionID(const
-                                                   OSSL_CMP_PKIHEADER *hdr)
+ASN1_OCTET_STRING *OSSL_CMP_HDR_get0_transactionID(const OSSL_CMP_PKIHEADER *hdr)
 {
     if (hdr == NULL) {
-        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        CMPerr(0, CMP_R_NULL_ARGUMENT);
         return NULL;
     }
     return hdr->transactionID;
@@ -66,44 +57,37 @@ ASN1_OCTET_STRING *ossl_cmp_hdr_get0_senderNonce(const OSSL_CMP_PKIHEADER *hdr)
 ASN1_OCTET_STRING *OSSL_CMP_HDR_get0_recipNonce(const OSSL_CMP_PKIHEADER *hdr)
 {
     if (hdr == NULL) {
-        ERR_raise(ERR_LIB_CMP, CMP_R_NULL_ARGUMENT);
+        CMPerr(0, CMP_R_NULL_ARGUMENT);
         return NULL;
     }
     return hdr->recipNonce;
 }
 
-/* a NULL-DN as an empty sequence of RDNs */
-int ossl_cmp_general_name_is_NULL_DN(GENERAL_NAME *name)
-{
-    return name == NULL
-        || (name->type == GEN_DIRNAME && IS_NULL_DN(name->d.directoryName));
-}
-
 /* assign to *tgt a copy of src (which may be NULL to indicate an empty DN) */
 static int set1_general_name(GENERAL_NAME **tgt, const X509_NAME *src)
 {
-    GENERAL_NAME *name;
+    GENERAL_NAME *gen;
 
     if (!ossl_assert(tgt != NULL))
         return 0;
-    if ((name = GENERAL_NAME_new()) == NULL)
+    if ((gen = GENERAL_NAME_new()) == NULL)
         goto err;
-    name->type = GEN_DIRNAME;
+    gen->type = GEN_DIRNAME;
 
     if (src == NULL) { /* NULL-DN */
-        if ((name->d.directoryName = X509_NAME_new()) == NULL)
+        if ((gen->d.directoryName = X509_NAME_new()) == NULL)
             goto err;
-    } else if (!X509_NAME_set(&name->d.directoryName, src)) {
+    } else if (!X509_NAME_set(&gen->d.directoryName, src)) {
         goto err;
     }
 
     GENERAL_NAME_free(*tgt);
-    *tgt = name;
+    *tgt = gen;
 
     return 1;
 
  err:
-    GENERAL_NAME_free(name);
+    GENERAL_NAME_free(gen);
     return 0;
 }
 
@@ -136,16 +120,26 @@ int ossl_cmp_hdr_update_messageTime(OSSL_CMP_PKIHEADER *hdr)
     return ASN1_GENERALIZEDTIME_set(hdr->messageTime, time(NULL)) != NULL;
 }
 
-/* assign to *tgt a random byte array of given length */
-static int set_random(ASN1_OCTET_STRING **tgt, OSSL_CMP_CTX *ctx, size_t len)
+/* assign to *tgt a copy of src (or if NULL a random byte array of given len) */
+static int set1_aostr_else_random(ASN1_OCTET_STRING **tgt,
+                                  const ASN1_OCTET_STRING *src, size_t len)
 {
-    unsigned char *bytes = OPENSSL_malloc(len);
+    unsigned char *bytes = NULL;
     int res = 0;
 
-    if (bytes == NULL || RAND_bytes_ex(ctx->libctx, bytes, len, 0) <= 0)
-        ERR_raise(ERR_LIB_CMP, CMP_R_FAILURE_OBTAINING_RANDOM);
-    else
+    if (src == NULL) { /* generate a random value if src == NULL */
+        if ((bytes = OPENSSL_malloc(len)) == NULL)
+            goto err;
+        if (RAND_bytes(bytes, len) <= 0) {
+            CMPerr(0, CMP_R_FAILURE_OBTAINING_RANDOM);
+            goto err;
+        }
         res = ossl_cmp_asn1_octet_string_set1_bytes(tgt, bytes, len);
+    } else {
+        res = ossl_cmp_asn1_octet_string_set1(tgt, src);
+    }
+
+ err:
     OPENSSL_free(bytes);
     return res;
 }
@@ -159,6 +153,25 @@ int ossl_cmp_hdr_set1_senderKID(OSSL_CMP_PKIHEADER *hdr,
 }
 
 /* push the given text string to the given PKIFREETEXT ft */
+int ossl_cmp_pkifreetext_push_str(OSSL_CMP_PKIFREETEXT *ft, const char *text)
+{
+    ASN1_UTF8STRING *utf8string;
+
+    if (!ossl_assert(ft != NULL && text != NULL))
+        return 0;
+    if ((utf8string = ASN1_UTF8STRING_new()) == NULL)
+        return 0;
+    if (!ASN1_STRING_set(utf8string, text, -1))
+        goto err;
+    if (!sk_ASN1_UTF8STRING_push(ft, utf8string))
+        goto err;
+    return 1;
+
+ err:
+    ASN1_UTF8STRING_free(utf8string);
+    return 0;
+}
+
 int ossl_cmp_hdr_push0_freeText(OSSL_CMP_PKIHEADER *hdr, ASN1_UTF8STRING *text)
 {
     if (!ossl_assert(hdr != NULL && text != NULL))
@@ -180,9 +193,7 @@ int ossl_cmp_hdr_push1_freeText(OSSL_CMP_PKIHEADER *hdr, ASN1_UTF8STRING *text)
             && (hdr->freeText = sk_ASN1_UTF8STRING_new_null()) == NULL)
         return 0;
 
-    return
-        ossl_cmp_sk_ASN1_UTF8STRING_push_str(hdr->freeText, (char *)text->data,
-                                             text->length);
+    return ossl_cmp_pkifreetext_push_str(hdr->freeText, (char *)text->data);
 }
 
 int ossl_cmp_hdr_generalInfo_push0_item(OSSL_CMP_PKIHEADER *hdr,
@@ -194,7 +205,7 @@ int ossl_cmp_hdr_generalInfo_push0_item(OSSL_CMP_PKIHEADER *hdr,
 }
 
 int ossl_cmp_hdr_generalInfo_push1_items(OSSL_CMP_PKIHEADER *hdr,
-                                         const STACK_OF(OSSL_CMP_ITAV) *itavs)
+                                         STACK_OF(OSSL_CMP_ITAV) *itavs)
 {
     int i;
     OSSL_CMP_ITAV *itav;
@@ -239,7 +250,7 @@ int ossl_cmp_hdr_set_implicitConfirm(OSSL_CMP_PKIHEADER *hdr)
 }
 
 /* return 1 if implicitConfirm in the generalInfo field of the header is set */
-int ossl_cmp_hdr_has_implicitConfirm(const OSSL_CMP_PKIHEADER *hdr)
+int ossl_cmp_hdr_check_implicitConfirm(const OSSL_CMP_PKIHEADER *hdr)
 {
     int itavCount;
     int i;
@@ -259,39 +270,11 @@ int ossl_cmp_hdr_has_implicitConfirm(const OSSL_CMP_PKIHEADER *hdr)
     return 0;
 }
 
-/*
- * set ctx->transactionID in CMP header
- * if ctx->transactionID is NULL, a random one is created with 128 bit
- * according to section 5.1.1:
- *
- * It is RECOMMENDED that the clients fill the transactionID field with
- * 128 bits of (pseudo-) random data for the start of a transaction to
- * reduce the probability of having the transactionID in use at the server.
- */
-int ossl_cmp_hdr_set_transactionID(OSSL_CMP_CTX *ctx, OSSL_CMP_PKIHEADER *hdr)
-{
-    if (ctx->transactionID == NULL) {
-        char *tid;
-
-        if (!set_random(&ctx->transactionID, ctx,
-                        OSSL_CMP_TRANSACTIONID_LENGTH))
-            return 0;
-        tid = i2s_ASN1_OCTET_STRING(NULL, ctx->transactionID);
-        if (tid != NULL)
-            ossl_cmp_log1(DEBUG, ctx,
-                          "Starting new transaction with ID=%s", tid);
-        OPENSSL_free(tid);
-    }
-
-    return ossl_cmp_asn1_octet_string_set1(&hdr->transactionID,
-                                           ctx->transactionID);
-}
-
 /* fill in all fields of the hdr according to the info given in ctx */
 int ossl_cmp_hdr_init(OSSL_CMP_CTX *ctx, OSSL_CMP_PKIHEADER *hdr)
 {
-    const X509_NAME *sender;
-    const X509_NAME *rcp = NULL;
+    X509_NAME *sender;
+    X509_NAME *rcp = NULL;
 
     if (!ossl_assert(ctx != NULL && hdr != NULL))
         return 0;
@@ -300,28 +283,38 @@ int ossl_cmp_hdr_init(OSSL_CMP_CTX *ctx, OSSL_CMP_PKIHEADER *hdr)
     if (!ossl_cmp_hdr_set_pvno(hdr, OSSL_CMP_PVNO))
         return 0;
 
+    sender = ctx->clCert != NULL ?
+        X509_get_subject_name(ctx->clCert) : ctx->subjectName;
     /*
-     * If no protection cert nor oldCert nor CSR nor subject is given,
-     * sender name is not known to the client and thus set to NULL-DN
+     * The sender name is copied from the subject of the client cert, if any,
+     * or else from the the subject name provided for certification requests.
+     * As required by RFC 4210 section 5.1.1., if the sender name is not known
+     * to the client it set to NULL-DN. In this case for identification at least
+     * the senderKID must be set, which we take from any referenceValue given.
      */
-    sender = ctx->cert != NULL ? X509_get_subject_name(ctx->cert) :
-        ctx->oldCert != NULL ? X509_get_subject_name(ctx->oldCert) :
-        ctx->p10CSR != NULL ? X509_REQ_get_subject_name(ctx->p10CSR) :
-        ctx->subjectName;
+    if (sender == NULL && ctx->referenceValue == NULL) {
+        CMPerr(0, CMP_R_MISSING_SENDER_IDENTIFICATION);
+        return 0;
+    }
     if (!ossl_cmp_hdr_set1_sender(hdr, sender))
         return 0;
 
     /* determine recipient entry in PKIHeader */
-    if (ctx->recipient != NULL)
-        rcp = ctx->recipient;
-    else if (ctx->srvCert != NULL)
+    if (ctx->srvCert != NULL) {
         rcp = X509_get_subject_name(ctx->srvCert);
-    else if (ctx->issuer != NULL)
+        /* set also as expected_sender of responses unless set explicitly */
+        if (ctx->expected_sender == NULL && rcp != NULL
+                && !OSSL_CMP_CTX_set1_expected_sender(ctx, rcp))
+            return 0;
+    } else if (ctx->recipient != NULL) {
+        rcp = ctx->recipient;
+    } else if (ctx->issuer != NULL) {
         rcp = ctx->issuer;
-    else if (ctx->oldCert != NULL)
+    } else if (ctx->oldCert != NULL) {
         rcp = X509_get_issuer_name(ctx->oldCert);
-    else if (ctx->cert != NULL)
-        rcp = X509_get_issuer_name(ctx->cert);
+    } else if (ctx->clCert != NULL) {
+        rcp = X509_get_issuer_name(ctx->clCert);
+    }
     if (!ossl_cmp_hdr_set1_recipient(hdr, rcp))
         return 0;
 
@@ -334,7 +327,21 @@ int ossl_cmp_hdr_init(OSSL_CMP_CTX *ctx, OSSL_CMP_PKIHEADER *hdr)
                                                 ctx->recipNonce))
         return 0;
 
-    if (!ossl_cmp_hdr_set_transactionID(ctx, hdr))
+    /*
+     * set ctx->transactionID in CMP header
+     * if ctx->transactionID is NULL, a random one is created with 128 bit
+     * according to section 5.1.1:
+     *
+     * It is RECOMMENDED that the clients fill the transactionID field with
+     * 128 bits of (pseudo-) random data for the start of a transaction to
+     * reduce the probability of having the transactionID in use at the server.
+     */
+    if (ctx->transactionID == NULL
+            && !set1_aostr_else_random(&ctx->transactionID, NULL,
+                                       OSSL_CMP_TRANSACTIONID_LENGTH))
+        return 0;
+    if (!ossl_cmp_asn1_octet_string_set1(&hdr->transactionID,
+                                         ctx->transactionID))
         return 0;
 
     /*-
@@ -349,7 +356,8 @@ int ossl_cmp_hdr_init(OSSL_CMP_CTX *ctx, OSSL_CMP_PKIHEADER *hdr)
      * is copied from the senderNonce of the previous message in the
      * transaction.
      */
-    if (!set_random(&hdr->senderNonce, ctx, OSSL_CMP_SENDERNONCE_LENGTH))
+    if (!set1_aostr_else_random(&hdr->senderNonce, NULL,
+                                OSSL_CMP_SENDERNONCE_LENGTH))
         return 0;
 
     /* store senderNonce - for cmp with recipNonce in next outgoing msg */

@@ -1,5 +1,5 @@
 /*
- * Copyright 2008-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2008-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -9,14 +9,7 @@
 
 #include <string.h>
 #include <openssl/crypto.h>
-#include "internal/endian.h"
 #include "crypto/modes.h"
-
-#if defined(__GNUC__) && !defined(STRICT_ALIGNMENT)
-typedef size_t size_t_aX __attribute((__aligned__(1)));
-#else
-typedef size_t size_t_aX;
-#endif
 
 /*
  * NOTE: the IV/counter CTR mode is big-endian.  The code itself is
@@ -40,9 +33,14 @@ static void ctr128_inc(unsigned char *counter)
 static void ctr128_inc_aligned(unsigned char *counter)
 {
     size_t *data, c, d, n;
-    DECLARE_IS_ENDIAN;
+    const union {
+        long one;
+        char little;
+    } is_endian = {
+        1
+    };
 
-    if (IS_LITTLE_ENDIAN || ((size_t)counter % sizeof(size_t)) != 0) {
+    if (is_endian.little || ((size_t)counter % sizeof(size_t)) != 0) {
         ctr128_inc(counter);
         return;
     }
@@ -99,9 +97,8 @@ void CRYPTO_ctr128_encrypt(const unsigned char *in, unsigned char *out,
                 (*block) (ivec, ecount_buf, key);
                 ctr128_inc_aligned(ivec);
                 for (n = 0; n < 16; n += sizeof(size_t))
-                    *(size_t_aX *)(out + n) =
-                        *(size_t_aX *)(in + n)
-                        ^ *(size_t_aX *)(ecount_buf + n);
+                    *(size_t *)(out + n) =
+                        *(size_t *)(in + n) ^ *(size_t *)(ecount_buf + n);
                 len -= 16;
                 out += 16;
                 in += 16;
@@ -155,7 +152,7 @@ void CRYPTO_ctr128_encrypt_ctr32(const unsigned char *in, unsigned char *out,
 {
     unsigned int n, ctr32;
 
-   n = *num;
+    n = *num;
 
     while (n && len) {
         *(out++) = *(in++) ^ ecount_buf[n];

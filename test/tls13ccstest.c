@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -9,7 +9,7 @@
 
 #include <openssl/ssl.h>
 #include <string.h>
-#include "helpers/ssltestlib.h"
+#include "ssltestlib.h"
 #include "testutil.h"
 #include "internal/packet.h"
 
@@ -42,7 +42,7 @@ static const BIO_METHOD *bio_f_watchccs_filter(void)
     if (method_watchccs == NULL) {
         method_watchccs = BIO_meth_new(BIO_TYPE_WATCHCCS_FILTER,
                                        "Watch CCS filter");
-        if (method_watchccs == NULL
+        if (   method_watchccs == NULL
             || !BIO_meth_set_write(method_watchccs, watchccs_write)
             || !BIO_meth_set_read(method_watchccs, watchccs_read)
             || !BIO_meth_set_puts(method_watchccs, watchccs_puts)
@@ -193,7 +193,7 @@ static int watchccs_write(BIO *bio, const char *in, int inl)
             } else {
                 badccs = 1;
             }
-        } else if (rectype == SSL3_RT_APPLICATION_DATA) {
+        } else if(rectype == SSL3_RT_APPLICATION_DATA) {
             if (bio == s_to_c_fbio)
                 sappdataseen = 1;
             else
@@ -254,8 +254,8 @@ static int test_tls13ccs(int tst)
     sappdataseen = cappdataseen = badccs = badvers = badsessid = 0;
     chsessidlen = 0;
 
-    if (!TEST_true(create_ssl_ctx_pair(NULL, TLS_server_method(),
-                                       TLS_client_method(), TLS1_VERSION, 0,
+    if (!TEST_true(create_ssl_ctx_pair(TLS_server_method(), TLS_client_method(),
+                                       TLS1_VERSION, 0,
                                        &sctx, &cctx, cert, privkey))
         || !TEST_true(SSL_CTX_set_max_early_data(sctx,
                                                  SSL3_RT_MAX_PLAIN_LENGTH)))
@@ -492,11 +492,6 @@ OPT_TEST_DECLARE_USAGE("certfile privkeyfile\n")
 
 int setup_tests(void)
 {
-    if (!test_skip_common_options()) {
-        TEST_error("Error parsing test options\n");
-        return 0;
-    }
-
     if (!TEST_ptr(cert = test_get_argument(0))
             || !TEST_ptr(privkey = test_get_argument(1)))
         return 0;

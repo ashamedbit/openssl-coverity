@@ -23,7 +23,7 @@ sub resext              { '.res.obj' }
 sub shlibext            { '.dll' }
 sub shlibextimport      { $target{shared_import_extension} || '.dll.a' }
 sub shlibextsimple      { undef }
-sub makedepcmd          { $disabled{makedepend} ? undef : $config{makedepcmd} }
+sub makedepprog         { $disabled{makedepend} ? undef : $config{makedepprog} }
 
 (my $sover_filename = $config{shlib_version}) =~ s|\.|_|g;
 sub shlib_version_as_filename {
@@ -37,13 +37,10 @@ sub sharedname {
                                          ? "-x64" : ""));
 }
 
-# With Mingw and other DLL producers, there isn't any "simpler" shared
-# library name.  However, there is a static import library.
+# With Mingw and other DLL producers, there isn't really any "simpler"
+# shared library name.  However, there is a static import library, so
+# we return that instead.
 sub sharedlib_simple {
-    return undef;
-}
-
-sub sharedlib_import {
     return platform::BASE::__concat(platform::BASE->sharedname($_[1]),
                                     $_[0]->shlibextimport());
 }

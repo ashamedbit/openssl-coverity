@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2015-2018 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2013-2014 Timo Teräs <timo.teras@gmail.com>
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -41,6 +41,7 @@
 # include <openssl/evp.h>
 # include <openssl/pem.h>
 # include <openssl/x509.h>
+
 
 # ifndef PATH_MAX
 #  define PATH_MAX 4096
@@ -168,12 +169,6 @@ static int add_entry(enum Type type, unsigned int hash, const char *filename,
         *ep = nilhentry;
         ep->old_id = ~0;
         ep->filename = OPENSSL_strdup(filename);
-        if (ep->filename == NULL) {
-            OPENSSL_free(ep);
-            ep = NULL;
-            BIO_printf(bio_err, "out of memory\n");
-            return 1;
-        }
         if (bp->last_entry)
             bp->last_entry->next = ep;
         if (bp->first_entry == NULL)
@@ -212,11 +207,11 @@ static int handle_symlink(const char *filename, const char *fullpath)
     }
     if (filename[i++] != '.')
         return -1;
-    for (type = OSSL_NELEM(suffixes) - 1; type > 0; type--)
-        if (OPENSSL_strncasecmp(&filename[i],
-                                suffixes[type], strlen(suffixes[type])) == 0)
+    for (type = OSSL_NELEM(suffixes) - 1; type > 0; type--) {
+        const char *suffix = suffixes[type];
+        if (strncasecmp(suffix, &filename[i], strlen(suffix)) == 0)
             break;
-
+    }
     i += strlen(suffixes[type]);
 
     id = strtoul(&filename[i], &endptr, 10);
@@ -238,7 +233,7 @@ static int do_file(const char *filename, const char *fullpath, enum Hash h)
 {
     STACK_OF (X509_INFO) *inf = NULL;
     X509_INFO *x;
-    const X509_NAME *name = NULL;
+    X509_NAME *name = NULL;
     BIO *b;
     const char *ext;
     unsigned char digest[EVP_MAX_MD_SIZE];
@@ -249,7 +244,7 @@ static int do_file(const char *filename, const char *fullpath, enum Hash h)
     if ((ext = strrchr(filename, '.')) == NULL)
         goto end;
     for (i = 0; i < OSSL_NELEM(extensions); i++) {
-        if (OPENSSL_strcasecmp(extensions[i], ext + 1) == 0)
+        if (strcasecmp(extensions[i], ext + 1) == 0)
             break;
     }
     if (i >= OSSL_NELEM(extensions))
@@ -279,41 +274,20 @@ static int do_file(const char *filename, const char *fullpath, enum Hash h)
     if (x->x509 != NULL) {
         type = TYPE_CERT;
         name = X509_get_subject_name(x->x509);
-        if (!X509_digest(x->x509, evpmd, digest, NULL)) {
-            BIO_printf(bio_err, "out of memory\n");
-            ++errs;
-            goto end;
-        }
+        X509_digest(x->x509, evpmd, digest, NULL);
     } else if (x->crl != NULL) {
         type = TYPE_CRL;
         name = X509_CRL_get_issuer(x->crl);
-        if (!X509_CRL_digest(x->crl, evpmd, digest, NULL)) {
-            BIO_printf(bio_err, "out of memory\n");
-            ++errs;
-            goto end;
-        }
+        X509_CRL_digest(x->crl, evpmd, digest, NULL);
     } else {
         ++errs;
         goto end;
     }
     if (name != NULL) {
-        if (h == HASH_NEW || h == HASH_BOTH) {
-            int ok;
-            unsigned long hash_value =
-                X509_NAME_hash_ex(name,
-                                  app_get0_libctx(), app_get0_propq(), &ok);
-
-            if (ok) {
-                errs += add_entry(type, hash_value, filename, digest, 1, ~0);
-            } else {
-                BIO_printf(bio_err, "%s: error calculating SHA1 hash value\n",
-                           opt_getprog());
-                errs++;
-            }
-        }
+        if ((h == HASH_NEW) || (h == HASH_BOTH))
+            errs += add_entry(type, X509_NAME_hash(name), filename, digest, 1, ~0);
         if ((h == HASH_OLD) || (h == HASH_BOTH))
-            errs += add_entry(type, X509_NAME_hash_old(name),
-                              filename, digest, 1, ~0);
+            errs += add_entry(type, X509_NAME_hash_old(name), filename, digest, 1, ~0);
     }
 
 end:
@@ -472,9 +446,8 @@ static int do_dir(const char *dirname, enum Hash h)
 }
 
 typedef enum OPTION_choice {
-    OPT_COMMON,
-    OPT_COMPAT, OPT_OLD, OPT_N, OPT_VERBOSE,
-    OPT_PROV_ENUM
+    OPT_ERR = -1, OPT_EOF = 0, OPT_HELP,
+    OPT_COMPAT, OPT_OLD, OPT_N, OPT_VERBOSE
 } OPTION_CHOICE;
 
 const OPTIONS rehash_options[] = {
@@ -489,8 +462,6 @@ const OPTIONS rehash_options[] = {
 
     OPT_SECTION("Output"),
     {"v", OPT_VERBOSE, '-', "Verbose output"},
-
-    OPT_PROV_OPTIONS,
 
     OPT_PARAMETERS(),
     {"directory", 0, 0, "One or more directories to process (optional)"},
@@ -528,19 +499,13 @@ int rehash_main(int argc, char **argv)
         case OPT_VERBOSE:
             verbose = 1;
             break;
-        case OPT_PROV_CASES:
-            if (!opt_provider(o))
-                goto end;
-            break;
         }
     }
-
-    /* Optional arguments are directories to scan. */
     argc = opt_num_rest();
     argv = opt_rest();
 
     evpmd = EVP_sha1();
-    evpmdsize = EVP_MD_get_size(evpmd);
+    evpmdsize = EVP_MD_size(evpmd);
 
     if (*argv != NULL) {
         while (*argv != NULL)

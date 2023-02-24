@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2018-2021 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2018 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -29,10 +29,8 @@ my $name = undef;               # internal library/module name
 my $ordinals_file = undef;      # the ordinals file to use
 my $version = undef;            # the version to use for the library
 my $OS = undef;                 # the operating system family
-my $type = 'lib';               # either lib or dso
 my $verbose = 0;
 my $ctest = 0;
-my $debug = 0;
 
 # For VMS, some modules may have case insensitive names
 my $case_insensitive = 0;
@@ -41,7 +39,6 @@ GetOptions('name=s'     => \$name,
            'ordinals=s' => \$ordinals_file,
            'version=s'  => \$version,
            'OS=s'       => \$OS,
-           'type=s'     => \$type,
            'ctest'      => \$ctest,
            'verbose'    => \$verbose,
            # For VMS
@@ -50,8 +47,6 @@ GetOptions('name=s'     => \$name,
 
 die "Please supply arguments\n"
     unless $name && $ordinals_file && $OS;
-die "--type argument must be equal to 'lib' or 'dso'"
-    if $type ne 'lib' && $type ne 'dso';
 
 # When building a "variant" shared library, with a custom SONAME, also customize
 # all the symbol versions.  This produces a shared object that can coexist
@@ -105,13 +100,12 @@ die "--type argument must be equal to 'lib' or 'dso'"
 #
 (my $SO_VARIANT = uc($target{"shlib_variant"} // '')) =~ s/\W/_/g;
 
-my $libname = $type eq 'lib' ? platform->sharedname($name) : platform->dsoname($name);
+my $libname = platform->sharedname($name);
 
 my %OS_data = (
     solaris     => { writer     => \&writer_linux,
                      sort       => sorter_linux(),
                      platforms  => { UNIX                       => 1 } },
-    "solaris-gcc" => 'solaris', # alias
     linux       => 'solaris',   # alias
     "bsd-gcc"   => 'solaris',   # alias
     aix         => { writer     => \&writer_aix,
@@ -132,9 +126,6 @@ my %OS_data = (
     NT          => 'WIN32',     # alias
     nt          => 'WIN32',     # alias
     mingw       => 'WINDOWS',   # alias
-    nonstop     => { writer     => \&writer_nonstop,
-                     sort       => OpenSSL::Ordinals::by_name(),
-                     platforms  => { TANDEM                     => 1 } },
    );
 
 do {
@@ -202,7 +193,7 @@ sub feature_filter {
             my $symdep = $1 * 10000 + $2 * 100 + ($3 // 0);
             $verdict = 0 if $config{api} >= $symdep;
             print STDERR "DEBUG: \$symdep = $symdep, \$verdict = $verdict\n"
-                if $debug && $1 == 0;
+                if $1 == 0;
         }
     }
 
@@ -287,28 +278,18 @@ sub writer_aix {
     }
 }
 
-sub writer_nonstop {
-    for (@_) {
-        print "-export ",$_->name(),"\n";
-    }
-}
-
 sub writer_windows {
     print <<"_____";
 ;
 ; Definition file for the DLL version of the $libname library from OpenSSL
 ;
 
-LIBRARY         "$libname"
+LIBRARY         $libname
 
 EXPORTS
 _____
     for (@_) {
-        print "    ",$_->name();
-        if (platform->can('export2internal')) {
-            print "=". platform->export2internal($_->name());
-        }
-        print "\n";
+        print "    ",$_->name(),"\n";
     }
 }
 

@@ -1,17 +1,11 @@
 /*
- * Copyright 2019-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
-
-/*
- * BF low level APIs are deprecated for public use, but still ok for internal
- * use.
- */
-#include "internal/deprecated.h"
 
 #include "cipher_blowfish.h"
 
@@ -31,7 +25,7 @@ static const PROV_CIPHER_HW bf_##mode = {                                      \
     cipher_hw_blowfish_initkey,                                                \
     cipher_hw_blowfish_##mode##_cipher                                         \
 };                                                                             \
-const PROV_CIPHER_HW *ossl_prov_cipher_hw_blowfish_##mode(size_t keybits)      \
+const PROV_CIPHER_HW *PROV_CIPHER_HW_blowfish_##mode(size_t keybits)           \
 {                                                                              \
     return &bf_##mode;                                                         \
 }

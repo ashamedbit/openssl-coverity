@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2004-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,27 +14,9 @@
 #include <openssl/bn.h>
 
 typedef enum OPTION_choice {
-    OPT_COMMON,
-    OPT_HEX, OPT_GENERATE, OPT_BITS, OPT_SAFE, OPT_CHECKS,
-    OPT_PROV_ENUM
+    OPT_ERR = -1, OPT_EOF = 0, OPT_HELP,
+    OPT_HEX, OPT_GENERATE, OPT_BITS, OPT_SAFE, OPT_CHECKS
 } OPTION_CHOICE;
-
-static int check_num(const char *s, const int is_hex)
-{
-    int i;
-    /*
-     * It would make sense to use ossl_isxdigit and ossl_isdigit here,
-     * but ossl_ctype_check is a local symbol in libcrypto.so.
-     */
-    if (is_hex) {
-        for (i = 0; ('0' <= s[i] && s[i] <= '9')
-                    || ('A' <= s[i] && s[i] <= 'F')
-                    || ('a' <= s[i] && s[i] <= 'f'); i++);
-    } else {
-        for (i = 0;  '0' <= s[i] && s[i] <= '9'; i++);
-    }
-    return s[i] == 0;
-}
 
 const OPTIONS prime_options[] = {
     {OPT_HELP_STR, 1, '-', "Usage: %s [options] [number...]\n"},
@@ -49,8 +31,6 @@ const OPTIONS prime_options[] = {
     {"generate", OPT_GENERATE, '-', "Generate a prime"},
     {"safe", OPT_SAFE, '-',
      "When used with -generate, generate a safe prime"},
-
-    OPT_PROV_OPTIONS,
 
     OPT_PARAMETERS(),
     {"number", 0, 0, "Number(s) to check for primality if not generating"},
@@ -92,20 +72,18 @@ opthelp:
             /* ignore parameter and argument */
             opt_arg();
             break;
-        case OPT_PROV_CASES:
-            if (!opt_provider(o))
-                goto end;
-            break;
         }
     }
-
-    /* Optional arguments are numbers to check. */
-    if (generate && !opt_check_rest_arg(NULL))
-        goto opthelp;
     argc = opt_num_rest();
     argv = opt_rest();
-    if (!generate && argc == 0) {
-        BIO_printf(bio_err, "Missing number (s) to check\n");
+
+    if (generate) {
+        if (argc != 0) {
+            BIO_printf(bio_err, "Extra arguments given.\n");
+            goto opthelp;
+        }
+    } else if (argc == 0) {
+        BIO_printf(bio_err, "%s: No prime specified\n", prog);
         goto opthelp;
     }
 
@@ -134,10 +112,12 @@ opthelp:
         OPENSSL_free(s);
     } else {
         for ( ; *argv; argv++) {
-            int r = check_num(argv[0], hex);
+            int r;
 
-            if (r)
-                r = hex ? BN_hex2bn(&bn, argv[0]) : BN_dec2bn(&bn, argv[0]);
+            if (hex)
+                r = BN_hex2bn(&bn, argv[0]);
+            else
+                r = BN_dec2bn(&bn, argv[0]);
 
             if (!r) {
                 BIO_printf(bio_err, "Failed to process value (%s)\n", argv[0]);

@@ -1,17 +1,11 @@
 /*
- * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
-
-/*
- * MDC2 low level APIs are deprecated for public use, but still ok for
- * internal use.
- */
-#include "internal/deprecated.h"
 
 #include <string.h>
 #include <openssl/provider.h>
@@ -48,7 +42,7 @@ static int test_mdc2(void)
     int testresult = 0;
     unsigned int pad_type = 2;
     unsigned char md[MDC2_DIGEST_LENGTH];
-    EVP_MD_CTX *c = NULL;
+    EVP_MD_CTX *c;
     static char text[] = "Now is the time for all ";
     size_t tlen = strlen(text), i = 0;
     OSSL_PROVIDER *prov = NULL;
@@ -59,9 +53,6 @@ static int test_mdc2(void)
     params[i++] = OSSL_PARAM_construct_end();
 
     prov = OSSL_PROVIDER_load(NULL, "legacy");
-    if (!TEST_ptr(prov))
-        goto end;
-
 # ifdef CHARSET_EBCDIC
     ebcdic2ascii(text, text, tlen);
 # endif

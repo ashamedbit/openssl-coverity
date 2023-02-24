@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -7,7 +7,7 @@
  * https://www.openssl.org/source/license.html
  */
 
-#include "internal/e_os.h"
+#include "e_os.h"
 #include "internal/cryptlib.h"
 #include "crypto/cryptlib.h"
 #include <stdio.h>
@@ -19,24 +19,22 @@
  * the following pointers may be changed as long as 'allow_customize' is set
  */
 static int allow_customize = 1;
-static CRYPTO_malloc_fn malloc_impl = CRYPTO_malloc;
-static CRYPTO_realloc_fn realloc_impl = CRYPTO_realloc;
-static CRYPTO_free_fn free_impl = CRYPTO_free;
 
-#if !defined(OPENSSL_NO_CRYPTO_MDEBUG) && !defined(FIPS_MODULE)
+static void *(*malloc_impl)(size_t, const char *, int)
+    = CRYPTO_malloc;
+static void *(*realloc_impl)(void *, size_t, const char *, int)
+    = CRYPTO_realloc;
+static void (*free_impl)(void *, const char *, int)
+    = CRYPTO_free;
+
+#if !defined(OPENSSL_NO_CRYPTO_MDEBUG) && !defined(FIPS_MODE)
 # include "internal/tsan_assist.h"
 
-# ifdef TSAN_REQUIRES_LOCKING
-#  define INCREMENT(x) /* empty */
-#  define LOAD(x) 0
-# else  /* TSAN_REQUIRES_LOCKING */
 static TSAN_QUALIFIER int malloc_count;
 static TSAN_QUALIFIER int realloc_count;
 static TSAN_QUALIFIER int free_count;
 
-#  define INCREMENT(x) tsan_counter(&(x))
-#  define LOAD(x)      tsan_load(&x)
-# endif /* TSAN_REQUIRES_LOCKING */
+# define INCREMENT(x) tsan_counter(&(x))
 
 static char *md_failstring;
 static long md_count;
@@ -54,42 +52,44 @@ static int shouldfail(void);
 # define FAILTEST() /* empty */
 #endif
 
-int CRYPTO_set_mem_functions(CRYPTO_malloc_fn malloc_fn,
-                             CRYPTO_realloc_fn realloc_fn,
-                             CRYPTO_free_fn free_fn)
+int CRYPTO_set_mem_functions(
+        void *(*m)(size_t, const char *, int),
+        void *(*r)(void *, size_t, const char *, int),
+        void (*f)(void *, const char *, int))
 {
     if (!allow_customize)
         return 0;
-    if (malloc_fn != NULL)
-        malloc_impl = malloc_fn;
-    if (realloc_fn != NULL)
-        realloc_impl = realloc_fn;
-    if (free_fn != NULL)
-        free_impl = free_fn;
+    if (m)
+        malloc_impl = m;
+    if (r)
+        realloc_impl = r;
+    if (f)
+        free_impl = f;
     return 1;
 }
 
-void CRYPTO_get_mem_functions(CRYPTO_malloc_fn *malloc_fn,
-                              CRYPTO_realloc_fn *realloc_fn,
-                              CRYPTO_free_fn *free_fn)
+void CRYPTO_get_mem_functions(
+        void *(**m)(size_t, const char *, int),
+        void *(**r)(void *, size_t, const char *, int),
+        void (**f)(void *, const char *, int))
 {
-    if (malloc_fn != NULL)
-        *malloc_fn = malloc_impl;
-    if (realloc_fn != NULL)
-        *realloc_fn = realloc_impl;
-    if (free_fn != NULL)
-        *free_fn = free_impl;
+    if (m != NULL)
+        *m = malloc_impl;
+    if (r != NULL)
+        *r = realloc_impl;
+    if (f != NULL)
+        *f = free_impl;
 }
 
-#if !defined(OPENSSL_NO_CRYPTO_MDEBUG) && !defined(FIPS_MODULE)
+#if !defined(OPENSSL_NO_CRYPTO_MDEBUG) && !defined(FIPS_MODE)
 void CRYPTO_get_alloc_counts(int *mcount, int *rcount, int *fcount)
 {
     if (mcount != NULL)
-        *mcount = LOAD(malloc_count);
+        *mcount = tsan_load(&malloc_count);
     if (rcount != NULL)
-        *rcount = LOAD(realloc_count);
+        *rcount = tsan_load(&realloc_count);
     if (fcount != NULL)
-        *fcount = LOAD(free_count);
+        *fcount = tsan_load(&free_count);
 }
 
 /*
@@ -170,15 +170,11 @@ void ossl_malloc_setup_failures(void)
 
 void *CRYPTO_malloc(size_t num, const char *file, int line)
 {
-    void *ptr;
+    void *ret = NULL;
 
     INCREMENT(malloc_count);
-    if (malloc_impl != CRYPTO_malloc) {
-        ptr = malloc_impl(num, file, line);
-        if (ptr != NULL || num == 0)
-            return ptr;
-        goto err;
-    }
+    if (malloc_impl != NULL && malloc_impl != CRYPTO_malloc)
+        return malloc_impl(num, file, line);
 
     if (num == 0)
         return NULL;
@@ -192,39 +188,26 @@ void *CRYPTO_malloc(size_t num, const char *file, int line)
          */
         allow_customize = 0;
     }
+    (void)(file); (void)(line);
+    ret = malloc(num);
 
-    ptr = malloc(num);
-    if (ptr != NULL)
-        return ptr;
- err:
-    /*
-     * ossl_err_get_state_int() in err.c uses CRYPTO_zalloc(num, NULL, 0) for
-     * ERR_STATE allocation. Prevent mem alloc error loop while reporting error.
-     */
-    if (file != NULL || line != 0) {
-        ERR_new();
-        ERR_set_debug(file, line, NULL);
-        ERR_set_error(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE, NULL);
-    }
-    return NULL;
+    return ret;
 }
 
 void *CRYPTO_zalloc(size_t num, const char *file, int line)
 {
-    void *ret;
+    void *ret = CRYPTO_malloc(num, file, line);
 
-    ret = CRYPTO_malloc(num, file, line);
     FAILTEST();
     if (ret != NULL)
         memset(ret, 0, num);
-
     return ret;
 }
 
 void *CRYPTO_realloc(void *str, size_t num, const char *file, int line)
 {
     INCREMENT(realloc_count);
-    if (realloc_impl != CRYPTO_realloc)
+    if (realloc_impl != NULL && realloc_impl != &CRYPTO_realloc)
         return realloc_impl(str, num, file, line);
 
     FAILTEST();
@@ -236,7 +219,9 @@ void *CRYPTO_realloc(void *str, size_t num, const char *file, int line)
         return NULL;
     }
 
+    (void)(file); (void)(line);
     return realloc(str, num);
+
 }
 
 void *CRYPTO_clear_realloc(void *str, size_t old_len, size_t num,
@@ -269,7 +254,7 @@ void *CRYPTO_clear_realloc(void *str, size_t old_len, size_t num,
 void CRYPTO_free(void *str, const char *file, int line)
 {
     INCREMENT(free_count);
-    if (free_impl != CRYPTO_free) {
+    if (free_impl != NULL && free_impl != &CRYPTO_free) {
         free_impl(str, file, line);
         return;
     }
@@ -304,12 +289,12 @@ int CRYPTO_set_mem_debug(int flag)
 int CRYPTO_mem_debug_push(const char *info, const char *file, int line)
 {
     (void)info; (void)file; (void)line;
-    return 0;
+    return -1;
 }
 
 int CRYPTO_mem_debug_pop(void)
 {
-    return 0;
+    return -1;
 }
 
 void CRYPTO_mem_debug_malloc(void *addr, size_t num, int flag,

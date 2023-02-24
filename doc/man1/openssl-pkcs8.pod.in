@@ -3,7 +3,7 @@
 
 =head1 NAME
 
-openssl-pkcs8 - PKCS#8 format private key conversion command
+openssl-pkcs8 - PKCS#8 format private key conversion tool
 
 =head1 SYNOPSIS
 
@@ -23,12 +23,14 @@ B<openssl> B<pkcs8>
 [B<-v2> I<alg>]
 [B<-v2prf> I<alg>]
 [B<-v1> I<alg>]
+[B<-engine> I<id>]
 [B<-scrypt>]
 [B<-scrypt_N> I<N>]
 [B<-scrypt_r> I<r>]
 [B<-scrypt_p> I<p>]
 {- $OpenSSL::safe::opt_r_synopsis -}
-{- $OpenSSL::safe::opt_engine_synopsis -}{- $OpenSSL::safe::opt_provider_synopsis -}
+
+=for openssl ifdef engine scrypt scrypt_N scrypt_r scrypt_p
 
 =head1 DESCRIPTION
 
@@ -53,7 +55,7 @@ reversed: it reads a private key and writes a PKCS#8 format key.
 =item B<-inform> B<DER>|B<PEM>, B<-outform> B<DER>|B<PEM>
 
 The input and formats; the default is B<PEM>.
-See L<openssl-format-options(1)> for details.
+See L<openssl(1)/Format Options> for details.
 
 If a key is being converted from PKCS#8 form (i.e. the B<-topk8> option is
 not used) then the input file must be in PKCS#8 format. An encrypted
@@ -86,7 +88,7 @@ prompted for.
 
 The password source for the input and output file.
 For more information about the format of B<arg>
-see L<openssl-passphrase-options(1)>.
+see L<openssl(1)/Pass Phrase Options>.
 
 =item B<-out> I<filename>
 
@@ -100,10 +102,6 @@ filename.
 When creating new PKCS#8 containers, use a given number of iterations on
 the password in deriving the encryption key for the PKCS#8 output.
 High values increase the time required to brute-force a PKCS#8 container.
-
-=item B<-noiter>
-
-When creating new PKCS#8 containers, use 1 as iteration count.
 
 =item B<-nocrypt>
 
@@ -137,6 +135,13 @@ This option indicates a PKCS#5 v1.5 or PKCS#12 algorithm should be used.  Some
 older implementations may not support PKCS#5 v2.0 and may require this option.
 If not specified PKCS#5 v2.0 form is used.
 
+=item B<-engine> I<id>
+
+Specifying an engine (by its unique I<id> string) will cause this command
+to attempt to obtain a functional reference to the specified engine,
+thus initialising it if needed. The engine will then be set as the default
+for all available algorithms.
+
 =item B<-scrypt>
 
 Uses the B<scrypt> algorithm for private key encryption using default
@@ -149,10 +154,6 @@ B<-scrypt_p> and B<-v2> options.
 Sets the scrypt I<N>, I<r> or I<p> parameters.
 
 {- $OpenSSL::safe::opt_r_item -}
-
-{- $OpenSSL::safe::opt_engine_item -}
-
-{- $OpenSSL::safe::opt_provider_item -}
 
 =back
 
@@ -249,7 +250,7 @@ one million iterations of the password:
 Test vectors from this PKCS#5 v2.0 implementation were posted to the
 pkcs-tng mailing list using triple DES, DES and RC2 with high iteration
 counts, several people confirmed that they could decrypt the private
-keys produced and therefore, it can be assumed that the PKCS#5 v2.0
+keys produced and Therefore it can be assumed that the PKCS#5 v2.0
 implementation is reasonably accurate at least as far as these
 algorithms are concerned.
 
@@ -274,11 +275,9 @@ L<openssl-gendsa(1)>
 
 The B<-iter> option was added in OpenSSL 1.1.0.
 
-The B<-engine> option was deprecated in OpenSSL 3.0.
-
 =head1 COPYRIGHT
 
-Copyright 2000-2021 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2000-2019 The OpenSSL Project Authors. All Rights Reserved.
 
 Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy

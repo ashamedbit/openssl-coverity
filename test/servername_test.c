@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2018 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2017 BaishanCloud. All rights reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -22,7 +22,7 @@
 
 #include "testutil.h"
 #include "internal/nelem.h"
-#include "helpers/ssltestlib.h"
+#include "ssltestlib.h"
 
 #define CLIENT_VERSION_LEN      2
 
@@ -30,13 +30,6 @@ static const char *host = "dummy-host";
 
 static char *cert = NULL;
 static char *privkey = NULL;
-
-#if defined(OPENSSL_NO_TLS1_3) || \
-    (defined(OPENSSL_NO_EC) && defined(OPENSSL_NO_DH))
-static int maxversion = TLS1_2_VERSION;
-#else
-static int maxversion = 0;
-#endif
 
 static int get_sni_from_client_hello(BIO *bio, char **sni)
 {
@@ -52,8 +45,8 @@ static int get_sni_from_client_hello(BIO *bio, char **sni)
     memset(&pkt4, 0, sizeof(pkt4));
     memset(&pkt5, 0, sizeof(pkt5));
 
-    if (!TEST_long_ge(len = BIO_get_mem_data(bio, (char **)&data), 0)
-            || !TEST_true(PACKET_buf_init(&pkt, data, len))
+    len = BIO_get_mem_data(bio, (char **)&data);
+    if (!TEST_true(PACKET_buf_init(&pkt, data, len))
                /* Skip the record header */
             || !PACKET_forward(&pkt, SSL3_RT_HEADER_LENGTH)
                /* Skip the handshake message header */
@@ -108,10 +101,6 @@ static int client_setup_sni_before_state(void)
     if (!TEST_ptr(ctx))
         goto end;
 
-    if (maxversion > 0
-            && !TEST_true(SSL_CTX_set_max_proto_version(ctx, maxversion)))
-        goto end;
-
     con = SSL_new(ctx);
     if (!TEST_ptr(con))
         goto end;
@@ -160,10 +149,6 @@ static int client_setup_sni_after_state(void)
     if (!TEST_ptr(ctx))
         goto end;
 
-    if (maxversion > 0
-            && !TEST_true(SSL_CTX_set_max_proto_version(ctx, maxversion)))
-        goto end;
-
     con = SSL_new(ctx);
     if (!TEST_ptr(con))
         goto end;
@@ -205,7 +190,7 @@ static int server_setup_sni(void)
     SSL *clientssl = NULL, *serverssl = NULL;
     int testresult = 0;
 
-    if (!TEST_true(create_ssl_ctx_pair(NULL, TLS_server_method(),
+    if (!TEST_true(create_ssl_ctx_pair(TLS_server_method(),
                                        TLS_client_method(),
                                        TLS1_VERSION, 0,
                                        &sctx, &cctx, cert, privkey))
@@ -254,11 +239,6 @@ static int test_servername(int test)
 
 int setup_tests(void)
 {
-    if (!test_skip_common_options()) {
-        TEST_error("Error parsing test options\n");
-        return 0;
-    }
-
     if (!TEST_ptr(cert = test_get_argument(0))
             || !TEST_ptr(privkey = test_get_argument(1)))
         return 0;

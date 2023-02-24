@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright (c) 2019, Oracle and/or its affiliates.  All rights reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -19,19 +19,24 @@
  * depth of the tree but potentially wastes more memory.  That is, this is a
  * direct space versus time tradeoff.
  *
- * The default is to use four bits which means that the are 16
- * pointers in each tree node.
+ * The large memory model uses twelve bits which means that the are 4096
+ * pointers in each tree node.  This is more than sufficient to hold the
+ * largest defined NID (as of Feb 2019).  This means that using a NID to
+ * index a sparse array becomes a constant time single array look up.
+ *
+ * The small memory model uses four bits which means the tree nodes contain
+ * sixteen pointers.  This reduces the amount of unused space significantly
+ * at a cost in time.
  *
  * The library builder is also permitted to define other sizes in the closed
- * interval [2, sizeof(ossl_uintmax_t) * 8].  Space use generally scales
- * exponentially with the block size, although the implementation only
- * creates enough blocks to support the largest used index.  The depth is:
- *      ceil(log_2(largest index) / 2^{block size})
- * E.g. with a block size of 4, and a largest index of 1000, the depth
- * will be three.
+ * interval [2, sizeof(ossl_uintmax_t) * 8].
  */
 #ifndef OPENSSL_SA_BLOCK_BITS
-# define OPENSSL_SA_BLOCK_BITS           4
+# ifdef OPENSSL_SMALL_FOOTPRINT
+#  define OPENSSL_SA_BLOCK_BITS           4
+# else
+#  define OPENSSL_SA_BLOCK_BITS           12
+# endif
 #elif OPENSSL_SA_BLOCK_BITS < 2 || OPENSSL_SA_BLOCK_BITS > (BN_BITS2 - 1)
 # error OPENSSL_SA_BLOCK_BITS is out of range
 #endif
@@ -55,7 +60,7 @@ struct sparse_array_st {
     void **nodes;
 };
 
-OPENSSL_SA *ossl_sa_new(void)
+OPENSSL_SA *OPENSSL_SA_new(void)
 {
     OPENSSL_SA *res = OPENSSL_zalloc(sizeof(*res));
 
@@ -107,15 +112,13 @@ static void sa_free_leaf(ossl_uintmax_t n, void *p, void *arg)
     OPENSSL_free(p);
 }
 
-void ossl_sa_free(OPENSSL_SA *sa)
+void OPENSSL_SA_free(OPENSSL_SA *sa)
 {
-    if (sa != NULL) {
-        sa_doall(sa, &sa_free_node, NULL, NULL);
-        OPENSSL_free(sa);
-    }
+    sa_doall(sa, &sa_free_node, NULL, NULL);
+    OPENSSL_free(sa);
 }
 
-void ossl_sa_free_leaves(OPENSSL_SA *sa)
+void OPENSSL_SA_free_leaves(OPENSSL_SA *sa)
 {
     sa_doall(sa, &sa_free_node, &sa_free_leaf, NULL);
     OPENSSL_free(sa);
@@ -131,7 +134,8 @@ static void trampoline(ossl_uintmax_t n, void *l, void *arg)
     ((const struct trampoline_st *)arg)->func(n, l);
 }
 
-void ossl_sa_doall(const OPENSSL_SA *sa, void (*leaf)(ossl_uintmax_t, void *))
+void OPENSSL_SA_doall(const OPENSSL_SA *sa, void (*leaf)(ossl_uintmax_t,
+                                                         void *))
 {
     struct trampoline_st tramp;
 
@@ -140,7 +144,7 @@ void ossl_sa_doall(const OPENSSL_SA *sa, void (*leaf)(ossl_uintmax_t, void *))
         sa_doall(sa, NULL, &trampoline, &tramp);
 }
 
-void ossl_sa_doall_arg(const OPENSSL_SA *sa,
+void OPENSSL_SA_doall_arg(const OPENSSL_SA *sa,
                           void (*leaf)(ossl_uintmax_t, void *, void *),
                           void *arg)
 {
@@ -148,17 +152,17 @@ void ossl_sa_doall_arg(const OPENSSL_SA *sa,
         sa_doall(sa, NULL, leaf, arg);
 }
 
-size_t ossl_sa_num(const OPENSSL_SA *sa)
+size_t OPENSSL_SA_num(const OPENSSL_SA *sa)
 {
     return sa == NULL ? 0 : sa->nelem;
 }
 
-void *ossl_sa_get(const OPENSSL_SA *sa, ossl_uintmax_t n)
+void *OPENSSL_SA_get(const OPENSSL_SA *sa, ossl_uintmax_t n)
 {
     int level;
     void **p, *r = NULL;
 
-    if (sa == NULL || sa->nelem == 0)
+    if (sa == NULL)
         return NULL;
 
     if (n <= sa->top) {
@@ -176,7 +180,7 @@ static ossl_inline void **alloc_node(void)
     return OPENSSL_zalloc(SA_BLOCK_MAX * sizeof(void *));
 }
 
-int ossl_sa_set(OPENSSL_SA *sa, ossl_uintmax_t posn, void *val)
+int OPENSSL_SA_set(OPENSSL_SA *sa, ossl_uintmax_t posn, void *val)
 {
     int i, level = 1;
     ossl_uintmax_t n = posn;

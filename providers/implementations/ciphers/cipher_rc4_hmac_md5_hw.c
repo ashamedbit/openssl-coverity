@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,12 +8,6 @@
  */
 
 /* RC4_HMAC_MD5 cipher implementation */
-
-/*
- * MD5 and RC4 low level APIs are deprecated for public use, but still ok for
- * internal use.
- */
-#include "internal/deprecated.h"
 
 #include "cipher_rc4_hmac_md5.h"
 
@@ -42,7 +36,6 @@ static int cipher_hw_rc4_hmac_md5_initkey(PROV_CIPHER_CTX *bctx,
     ctx->tail = ctx->head;
     ctx->md = ctx->head;
     ctx->payload_length = NO_PAYLOAD_LENGTH;
-    bctx->removetlsfixed = MD5_DIGEST_LENGTH;
     return 1;
 }
 
@@ -226,8 +219,7 @@ static const PROV_CIPHER_HW_RC4_HMAC_MD5 rc4_hmac_md5_hw = {
     cipher_hw_rc4_hmac_md5_tls_init,
     cipher_hw_rc4_hmac_md5_init_mackey
 };
-
-const PROV_CIPHER_HW *ossl_prov_cipher_hw_rc4_hmac_md5(size_t keybits)
+const PROV_CIPHER_HW *PROV_CIPHER_HW_rc4_hmac_md5(size_t keybits)
 {
     return (PROV_CIPHER_HW *)&rc4_hmac_md5_hw;
 }

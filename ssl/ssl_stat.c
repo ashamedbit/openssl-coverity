@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright 2005 Nokia. All rights reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
@@ -13,9 +13,7 @@
 
 const char *SSL_state_string_long(const SSL *s)
 {
-    const SSL_CONNECTION *sc = SSL_CONNECTION_FROM_CONST_SSL(s);
-
-    if (sc == NULL || ossl_statem_in_error(sc))
+    if (ossl_statem_in_error(s))
         return "error";
 
     switch (SSL_get_state(s)) {
@@ -122,9 +120,7 @@ const char *SSL_state_string_long(const SSL *s)
 
 const char *SSL_state_string(const SSL *s)
 {
-    const SSL_CONNECTION *sc = SSL_CONNECTION_FROM_CONST_SSL(s);
-
-    if (sc == NULL || ossl_statem_in_error(sc))
+    if (ossl_statem_in_error(s))
         return "SSLERR";
 
     switch (SSL_get_state(s)) {
@@ -141,9 +137,9 @@ const char *SSL_state_string(const SSL *s)
     case TLS_ST_CW_NEXT_PROTO:
         return "TWNP";
     case TLS_ST_BEFORE:
-        return "PINIT";
+        return "PINIT ";
     case TLS_ST_OK:
-        return "SSLOK";
+        return "SSLOK ";
     case TLS_ST_CW_CLNT_HELLO:
         return "TWCH";
     case TLS_ST_CR_SRVR_HELLO:
@@ -205,7 +201,7 @@ const char *SSL_state_string(const SSL *s)
     case TLS_ST_CR_CERT_VRFY:
         return "TRSCV";
     case TLS_ST_SW_CERT_VRFY:
-        return "TWSCV";
+        return "TRSCV";
     case TLS_ST_CR_HELLO_REQ:
         return "TRHR";
     case TLS_ST_SW_KEY_UPDATE:
@@ -225,7 +221,7 @@ const char *SSL_state_string(const SSL *s)
     case TLS_ST_SR_END_OF_EARLY_DATA:
         return "TWEOED";
     default:
-        return "UNKWN";
+        return "UNKWN ";
     }
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -36,7 +36,8 @@ static size_t internal_trace_cb(const char *buf, size_t cnt,
         BIO_snprintf(buffer, sizeof(buffer), "TRACE[%s]:%s: ",
                      hex, OSSL_trace_get_category_name(category));
         OPENSSL_free(hex);
-        BIO_set_prefix(trace_data->bio, buffer);
+        BIO_ctrl(trace_data->bio, PREFIX_CTRL_SET_PREFIX,
+                 strlen(buffer), buffer);
         break;
     case OSSL_TRACE_CTRL_WRITE:
         ret = BIO_write(trace_data->bio, buf, cnt);
@@ -44,7 +45,7 @@ static size_t internal_trace_cb(const char *buf, size_t cnt,
     case OSSL_TRACE_CTRL_END:
         trace_data->ingroup = 0;
 
-        BIO_set_prefix(trace_data->bio, NULL);
+        BIO_ctrl(trace_data->bio, PREFIX_CTRL_SET_PREFIX, 0, NULL);
         break;
     }
 
@@ -71,18 +72,15 @@ static void setup_trace_category(int category)
 {
     BIO *channel;
     tracedata *trace_data;
-    BIO *bio = NULL;
 
     if (OSSL_trace_enabled(category))
         return;
 
-    bio = BIO_new(BIO_f_prefix());
-    channel = BIO_push(bio,
+    channel = BIO_push(BIO_new(apps_bf_prefix()),
                        BIO_new_fp(stderr, BIO_NOCLOSE | BIO_FP_TEXT));
     trace_data = OPENSSL_zalloc(sizeof(*trace_data));
 
     if (trace_data == NULL
-        || bio == NULL
         || (trace_data->bio = channel) == NULL
         || OSSL_trace_set_callback(category, internal_trace_cb,
                                    trace_data) == 0

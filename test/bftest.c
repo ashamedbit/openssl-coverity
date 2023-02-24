@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -8,10 +8,9 @@
  */
 
 /*
- * BF low level APIs are deprecated for public use, but still ok for internal
- * use.
+ * This has been a quickly hacked 'ideatest.c'.  When I add tests for other
+ * RC2 modes, more of the code will be uncommented.
  */
-#include "internal/deprecated.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -465,7 +464,7 @@ int setup_tests(void)
 # endif
 
     while ((o = opt_next()) != OPT_EOF) {
-        switch (o) {
+        switch(o) {
         case OPT_PRINT:
             print_test_data();
             return 1;

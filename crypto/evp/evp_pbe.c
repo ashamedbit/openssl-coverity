@@ -1,5 +1,5 @@
 /*
- * Copyright 1999-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1999-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -10,8 +10,6 @@
 #include <stdio.h>
 #include "internal/cryptlib.h"
 #include <openssl/evp.h>
-#include <openssl/core.h>
-#include <openssl/core_names.h>
 #include <openssl/pkcs12.h>
 #include <openssl/x509.h>
 #include "crypto/evp.h"
@@ -27,42 +25,41 @@ struct evp_pbe_st {
     int cipher_nid;
     int md_nid;
     EVP_PBE_KEYGEN *keygen;
-    EVP_PBE_KEYGEN_EX *keygen_ex;
 };
 
 static STACK_OF(EVP_PBE_CTL) *pbe_algs;
 
 static const EVP_PBE_CTL builtin_pbe[] = {
     {EVP_PBE_TYPE_OUTER, NID_pbeWithMD2AndDES_CBC,
-     NID_des_cbc, NID_md2, PKCS5_PBE_keyivgen, PKCS5_PBE_keyivgen_ex},
+     NID_des_cbc, NID_md2, PKCS5_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbeWithMD5AndDES_CBC,
-     NID_des_cbc, NID_md5, PKCS5_PBE_keyivgen, PKCS5_PBE_keyivgen_ex},
+     NID_des_cbc, NID_md5, PKCS5_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbeWithSHA1AndRC2_CBC,
-     NID_rc2_64_cbc, NID_sha1, PKCS5_PBE_keyivgen, PKCS5_PBE_keyivgen_ex},
+     NID_rc2_64_cbc, NID_sha1, PKCS5_PBE_keyivgen},
 
     {EVP_PBE_TYPE_OUTER, NID_id_pbkdf2, -1, -1, PKCS5_v2_PBKDF2_keyivgen},
 
     {EVP_PBE_TYPE_OUTER, NID_pbe_WithSHA1And128BitRC4,
-     NID_rc4, NID_sha1, PKCS12_PBE_keyivgen, &PKCS12_PBE_keyivgen_ex},
+     NID_rc4, NID_sha1, PKCS12_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbe_WithSHA1And40BitRC4,
-     NID_rc4_40, NID_sha1, PKCS12_PBE_keyivgen, &PKCS12_PBE_keyivgen_ex},
+     NID_rc4_40, NID_sha1, PKCS12_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbe_WithSHA1And3_Key_TripleDES_CBC,
-     NID_des_ede3_cbc, NID_sha1, PKCS12_PBE_keyivgen, &PKCS12_PBE_keyivgen_ex},
+     NID_des_ede3_cbc, NID_sha1, PKCS12_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbe_WithSHA1And2_Key_TripleDES_CBC,
-     NID_des_ede_cbc, NID_sha1, PKCS12_PBE_keyivgen, &PKCS12_PBE_keyivgen_ex},
+     NID_des_ede_cbc, NID_sha1, PKCS12_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbe_WithSHA1And128BitRC2_CBC,
-     NID_rc2_cbc, NID_sha1, PKCS12_PBE_keyivgen, &PKCS12_PBE_keyivgen_ex},
+     NID_rc2_cbc, NID_sha1, PKCS12_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbe_WithSHA1And40BitRC2_CBC,
-     NID_rc2_40_cbc, NID_sha1, PKCS12_PBE_keyivgen, &PKCS12_PBE_keyivgen_ex},
+     NID_rc2_40_cbc, NID_sha1, PKCS12_PBE_keyivgen},
 
-    {EVP_PBE_TYPE_OUTER, NID_pbes2, -1, -1, PKCS5_v2_PBE_keyivgen, &PKCS5_v2_PBE_keyivgen_ex},
+    {EVP_PBE_TYPE_OUTER, NID_pbes2, -1, -1, PKCS5_v2_PBE_keyivgen},
 
     {EVP_PBE_TYPE_OUTER, NID_pbeWithMD2AndRC2_CBC,
-     NID_rc2_64_cbc, NID_md2, PKCS5_PBE_keyivgen, PKCS5_PBE_keyivgen_ex},
+     NID_rc2_64_cbc, NID_md2, PKCS5_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbeWithMD5AndRC2_CBC,
-     NID_rc2_64_cbc, NID_md5, PKCS5_PBE_keyivgen, PKCS5_PBE_keyivgen_ex},
+     NID_rc2_64_cbc, NID_md5, PKCS5_PBE_keyivgen},
     {EVP_PBE_TYPE_OUTER, NID_pbeWithSHA1AndDES_CBC,
-     NID_des_cbc, NID_sha1, PKCS5_PBE_keyivgen, PKCS5_PBE_keyivgen_ex},
+     NID_des_cbc, NID_sha1, PKCS5_PBE_keyivgen},
 
     {EVP_PBE_TYPE_PRF, NID_hmacWithSHA1, -1, NID_sha1, 0},
     {EVP_PBE_TYPE_PRF, NID_hmac_md5, -1, NID_md5, 0},
@@ -77,45 +74,33 @@ static const EVP_PBE_CTL builtin_pbe[] = {
      NID_id_GostR3411_2012_256, 0},
     {EVP_PBE_TYPE_PRF, NID_id_tc26_hmac_gost_3411_2012_512, -1,
      NID_id_GostR3411_2012_512, 0},
-    {EVP_PBE_TYPE_PRF, NID_hmac_sha3_224, -1, NID_sha3_224, 0},
-    {EVP_PBE_TYPE_PRF, NID_hmac_sha3_256, -1, NID_sha3_256, 0},
-    {EVP_PBE_TYPE_PRF, NID_hmac_sha3_384, -1, NID_sha3_384, 0},
-    {EVP_PBE_TYPE_PRF, NID_hmac_sha3_512, -1, NID_sha3_512, 0},
     {EVP_PBE_TYPE_PRF, NID_hmacWithSHA512_224, -1, NID_sha512_224, 0},
     {EVP_PBE_TYPE_PRF, NID_hmacWithSHA512_256, -1, NID_sha512_256, 0},
-#ifndef OPENSSL_NO_SM3
-    {EVP_PBE_TYPE_PRF, NID_hmacWithSM3, -1, NID_sm3, 0},
-#endif
-    {EVP_PBE_TYPE_KDF, NID_id_pbkdf2, -1, -1, PKCS5_v2_PBKDF2_keyivgen, &PKCS5_v2_PBKDF2_keyivgen_ex},
+    {EVP_PBE_TYPE_KDF, NID_id_pbkdf2, -1, -1, PKCS5_v2_PBKDF2_keyivgen},
 #ifndef OPENSSL_NO_SCRYPT
-    {EVP_PBE_TYPE_KDF, NID_id_scrypt, -1, -1, PKCS5_v2_scrypt_keyivgen, &PKCS5_v2_scrypt_keyivgen_ex}
+    {EVP_PBE_TYPE_KDF, NID_id_scrypt, -1, -1, PKCS5_v2_scrypt_keyivgen}
 #endif
 };
 
-
-int EVP_PBE_CipherInit_ex(ASN1_OBJECT *pbe_obj, const char *pass, int passlen,
-                          ASN1_TYPE *param, EVP_CIPHER_CTX *ctx, int en_de,
-                          OSSL_LIB_CTX *libctx, const char *propq)
+int EVP_PBE_CipherInit(ASN1_OBJECT *pbe_obj, const char *pass, int passlen,
+                       ASN1_TYPE *param, EVP_CIPHER_CTX *ctx, int en_de)
 {
-    const EVP_CIPHER *cipher = NULL;
-    EVP_CIPHER *cipher_fetch = NULL;
-    const EVP_MD *md = NULL;
-    EVP_MD *md_fetch = NULL;
-    int ret = 0, cipher_nid, md_nid;
-    EVP_PBE_KEYGEN_EX *keygen_ex;
+    const EVP_CIPHER *cipher;
+    const EVP_MD *md;
+    int cipher_nid, md_nid;
     EVP_PBE_KEYGEN *keygen;
 
-    if (!EVP_PBE_find_ex(EVP_PBE_TYPE_OUTER, OBJ_obj2nid(pbe_obj),
-                         &cipher_nid, &md_nid, &keygen, &keygen_ex)) {
+    if (!EVP_PBE_find(EVP_PBE_TYPE_OUTER, OBJ_obj2nid(pbe_obj),
+                      &cipher_nid, &md_nid, &keygen)) {
         char obj_tmp[80];
 
+        EVPerr(EVP_F_EVP_PBE_CIPHERINIT, EVP_R_UNKNOWN_PBE_ALGORITHM);
         if (pbe_obj == NULL)
             OPENSSL_strlcpy(obj_tmp, "NULL", sizeof(obj_tmp));
         else
             i2t_ASN1_OBJECT(obj_tmp, sizeof(obj_tmp), pbe_obj);
-        ERR_raise_data(ERR_LIB_EVP, EVP_R_UNKNOWN_PBE_ALGORITHM,
-                       "TYPE=%s", obj_tmp);
-        goto err;
+        ERR_add_error_data(2, "TYPE=", obj_tmp);
+        return 0;
     }
 
     if (pass == NULL)
@@ -123,53 +108,31 @@ int EVP_PBE_CipherInit_ex(ASN1_OBJECT *pbe_obj, const char *pass, int passlen,
     else if (passlen == -1)
         passlen = strlen(pass);
 
-    if (cipher_nid != -1) {
-        (void)ERR_set_mark();
-        cipher = cipher_fetch = EVP_CIPHER_fetch(libctx, OBJ_nid2sn(cipher_nid), propq);
-        /* Fallback to legacy method */
-        if (cipher == NULL)
-            cipher = EVP_get_cipherbynid(cipher_nid);
-        if (cipher == NULL) {
-            (void)ERR_clear_last_mark();
-            ERR_raise_data(ERR_LIB_EVP, EVP_R_UNKNOWN_CIPHER,
-                           OBJ_nid2sn(cipher_nid));
-            goto err;
+    if (cipher_nid == -1)
+        cipher = NULL;
+    else {
+        cipher = EVP_get_cipherbynid(cipher_nid);
+        if (!cipher) {
+            EVPerr(EVP_F_EVP_PBE_CIPHERINIT, EVP_R_UNKNOWN_CIPHER);
+            return 0;
         }
-        (void)ERR_pop_to_mark();
     }
 
-    if (md_nid != -1) {
-        (void)ERR_set_mark();
-        md = md_fetch = EVP_MD_fetch(libctx, OBJ_nid2sn(md_nid), propq);
-        /* Fallback to legacy method */
-        if (md == NULL)
-            EVP_get_digestbynid(md_nid);
-
-        if (md == NULL) {
-            (void)ERR_clear_last_mark();
-            ERR_raise(ERR_LIB_EVP, EVP_R_UNKNOWN_DIGEST);
-            goto err;
+    if (md_nid == -1)
+        md = NULL;
+    else {
+        md = EVP_get_digestbynid(md_nid);
+        if (!md) {
+            EVPerr(EVP_F_EVP_PBE_CIPHERINIT, EVP_R_UNKNOWN_DIGEST);
+            return 0;
         }
-        (void)ERR_pop_to_mark();
     }
 
-    /* Try extended keygen with libctx/propq first, fall back to legacy keygen */
-    if (keygen_ex != NULL)
-        ret = keygen_ex(ctx, pass, passlen, param, cipher, md, en_de, libctx, propq);
-    else
-        ret = keygen(ctx, pass, passlen, param, cipher, md, en_de);
-
-err:
-    EVP_CIPHER_free(cipher_fetch);
-    EVP_MD_free(md_fetch);
-
-    return ret;
-}
-
-int EVP_PBE_CipherInit(ASN1_OBJECT *pbe_obj, const char *pass, int passlen,
-                       ASN1_TYPE *param, EVP_CIPHER_CTX *ctx, int en_de)
-{
-    return EVP_PBE_CipherInit_ex(pbe_obj, pass, passlen, param, ctx, en_de, NULL, NULL);
+    if (!keygen(ctx, pass, passlen, param, cipher, md, en_de)) {
+        EVPerr(EVP_F_EVP_PBE_CIPHERINIT, EVP_R_KEYGEN_FAILURE);
+        return 0;
+    }
+    return 1;
 }
 
 DECLARE_OBJ_BSEARCH_CMP_FN(EVP_PBE_CTL, EVP_PBE_CTL, pbe2);
@@ -207,7 +170,7 @@ int EVP_PBE_alg_add_type(int pbe_type, int pbe_nid, int cipher_nid,
             goto err;
     }
 
-    if ((pbe_tmp = OPENSSL_zalloc(sizeof(*pbe_tmp))) == NULL)
+    if ((pbe_tmp = OPENSSL_malloc(sizeof(*pbe_tmp))) == NULL)
         goto err;
 
     pbe_tmp->pbe_type = pbe_type;
@@ -223,7 +186,7 @@ int EVP_PBE_alg_add_type(int pbe_type, int pbe_nid, int cipher_nid,
     return 1;
 
  err:
-    ERR_raise(ERR_LIB_EVP, ERR_R_MALLOC_FAILURE);
+    EVPerr(EVP_F_EVP_PBE_ALG_ADD_TYPE, ERR_R_MALLOC_FAILURE);
     return 0;
 }
 
@@ -233,11 +196,11 @@ int EVP_PBE_alg_add(int nid, const EVP_CIPHER *cipher, const EVP_MD *md,
     int cipher_nid, md_nid;
 
     if (cipher)
-        cipher_nid = EVP_CIPHER_get_nid(cipher);
+        cipher_nid = EVP_CIPHER_nid(cipher);
     else
         cipher_nid = -1;
     if (md)
-        md_nid = EVP_MD_get_type(md);
+        md_nid = EVP_MD_type(md);
     else
         md_nid = -1;
 
@@ -245,8 +208,8 @@ int EVP_PBE_alg_add(int nid, const EVP_CIPHER *cipher, const EVP_MD *md,
                                 cipher_nid, md_nid, keygen);
 }
 
-int EVP_PBE_find_ex(int type, int pbe_nid, int *pcnid, int *pmnid,
-                    EVP_PBE_KEYGEN **pkeygen, EVP_PBE_KEYGEN_EX **pkeygen_ex)
+int EVP_PBE_find(int type, int pbe_nid,
+                 int *pcnid, int *pmnid, EVP_PBE_KEYGEN **pkeygen)
 {
     EVP_PBE_CTL *pbetmp = NULL, pbelu;
     int i;
@@ -265,21 +228,13 @@ int EVP_PBE_find_ex(int type, int pbe_nid, int *pcnid, int *pmnid,
     }
     if (pbetmp == NULL)
         return 0;
-    if (pcnid != NULL)
+    if (pcnid)
         *pcnid = pbetmp->cipher_nid;
-    if (pmnid != NULL)
+    if (pmnid)
         *pmnid = pbetmp->md_nid;
-    if (pkeygen != NULL)
+    if (pkeygen)
         *pkeygen = pbetmp->keygen;
-    if (pkeygen_ex != NULL)
-        *pkeygen_ex = pbetmp->keygen_ex;
     return 1;
-}
-
-int EVP_PBE_find(int type, int pbe_nid,
-                 int *pcnid, int *pmnid, EVP_PBE_KEYGEN **pkeygen)
-{
-    return EVP_PBE_find_ex(type, pbe_nid, pcnid, pmnid, pkeygen, NULL);
 }
 
 static void free_evp_pbe_ctl(EVP_PBE_CTL *pbe)

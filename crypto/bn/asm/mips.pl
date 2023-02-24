@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2010-2020 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2010-2016 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -1986,8 +1986,6 @@ $code.=<<___;
 	sltu	$at,$c_2,$t_1
 	$ADDU	$c_3,$t_2,$at
 	$ST	$c_2,$BNSZ($a0)
-	sltu	$at,$c_3,$t_2
-	$ADDU	$c_1,$at
 	mflo	($t_1,$a_2,$a_0)
 	mfhi	($t_2,$a_2,$a_0)
 ___
@@ -2198,8 +2196,6 @@ $code.=<<___;
 	sltu	$at,$c_2,$t_1
 	$ADDU	$c_3,$t_2,$at
 	$ST	$c_2,$BNSZ($a0)
-	sltu	$at,$c_3,$t_2
-	$ADDU	$c_1,$at
 	mflo	($t_1,$a_2,$a_0)
 	mfhi	($t_2,$a_2,$a_0)
 ___
@@ -2266,4 +2262,4 @@ $code.=<<___;
 .end	bn_sqr_comba4
 ___
 print $code;
-close STDOUT or die "error closing STDOUT: $!";
+close STDOUT;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2022 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2019 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -11,11 +11,14 @@
 #include <openssl/bio.h>
 #include <openssl/safestack.h>
 #include "names.h"
-#include "internal/e_os.h"
+
+#ifdef _WIN32
+# define strcasecmp _stricmp
+#endif
 
 int name_cmp(const char * const *a, const char * const *b)
 {
-    return OPENSSL_strcasecmp(*a, *b);
+    return strcasecmp(*a, *b);
 }
 
 void collect_names(const char *name, void *vdata)

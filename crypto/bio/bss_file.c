@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -42,8 +42,10 @@ static int file_free(BIO *data);
 static const BIO_METHOD methods_filep = {
     BIO_TYPE_FILE,
     "FILE pointer",
+    /* TODO: Convert to new style write function */
     bwrite_conv,
     file_write,
+    /* TODO: Convert to new style read function */
     bread_conv,
     file_read,
     file_puts,
@@ -72,9 +74,9 @@ BIO *BIO_new_file(const char *filename, const char *mode)
             || errno == ENXIO
 #endif
             )
-            ERR_raise(ERR_LIB_BIO, BIO_R_NO_SUCH_FILE);
+            BIOerr(BIO_F_BIO_NEW_FILE, BIO_R_NO_SUCH_FILE);
         else
-            ERR_raise(ERR_LIB_BIO, ERR_R_SYS_LIB);
+            BIOerr(BIO_F_BIO_NEW_FILE, ERR_R_SYS_LIB);
         return NULL;
     }
     if ((ret = BIO_new(BIO_s_file())) == NULL) {
@@ -147,7 +149,7 @@ static int file_read(BIO *b, char *out, int outl)
                 ? UP_ferror((FILE *)b->ptr) : ferror((FILE *)b->ptr))) {
             ERR_raise_data(ERR_LIB_SYS, get_last_sys_error(),
                            "calling fread()");
-            ERR_raise(ERR_LIB_BIO, ERR_R_SYS_LIB);
+            BIOerr(BIO_F_FILE_READ, ERR_R_SYS_LIB);
             ret = -1;
         }
     }
@@ -214,7 +216,7 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
 #   define _IOB_ENTRIES 20
 #  endif
         /* Safety net to catch purely internal BIO_set_fp calls */
-#  if (defined(_MSC_VER) && _MSC_VER>=1900) || defined(__BORLANDC__)
+#  if defined(_MSC_VER) && _MSC_VER>=1900
         if (ptr == stdin || ptr == stdout || ptr == stderr)
             BIO_clear_flags(b, BIO_FLAGS_UPLINK_INTERNAL);
 #  elif defined(_IOB_ENTRIES)
@@ -235,15 +237,6 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
                 _setmode(fd, _O_TEXT);
             else
                 _setmode(fd, _O_BINARY);
-            /*
-             * Reports show that ftell() isn't trustable in text mode.
-             * This has been confirmed as a bug in the Universal C RTL, see
-             * https://developercommunity.visualstudio.com/content/problem/425878/fseek-ftell-fail-in-text-mode-for-unix-style-text.html
-             * The suggested work-around from Microsoft engineering is to
-             * turn off buffering until the bug is resolved.
-             */
-            if ((num & BIO_FP_TEXT) != 0)
-                setvbuf((FILE *)ptr, NULL, _IONBF, 0);
 # elif defined(OPENSSL_SYS_MSDOS)
             int fd = fileno((FILE *)ptr);
             /* Set correct text/binary mode */
@@ -279,7 +272,7 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
         else if (num & BIO_FP_READ)
             OPENSSL_strlcpy(p, "r", sizeof(p));
         else {
-            ERR_raise(ERR_LIB_BIO, BIO_R_BAD_FOPEN_MODE);
+            BIOerr(BIO_F_FILE_CTRL, BIO_R_BAD_FOPEN_MODE);
             ret = 0;
             break;
         }
@@ -297,7 +290,7 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
             ERR_raise_data(ERR_LIB_SYS, get_last_sys_error(),
                            "calling fopen(%s, %s)",
                            ptr, p);
-            ERR_raise(ERR_LIB_BIO, ERR_R_SYS_LIB);
+            BIOerr(BIO_F_FILE_CTRL, ERR_R_SYS_LIB);
             ret = 0;
             break;
         }
@@ -325,7 +318,7 @@ static long file_ctrl(BIO *b, int cmd, long num, void *ptr)
         if (st == EOF) {
             ERR_raise_data(ERR_LIB_SYS, get_last_sys_error(),
                            "calling fflush()");
-            ERR_raise(ERR_LIB_BIO, ERR_R_SYS_LIB);
+            BIOerr(BIO_F_FILE_CTRL, ERR_R_SYS_LIB);
             ret = 0;
         }
         break;
@@ -405,8 +398,10 @@ static int file_free(BIO *a)
 static const BIO_METHOD methods_filep = {
     BIO_TYPE_FILE,
     "FILE pointer",
+    /* TODO: Convert to new style write function */
     bwrite_conv,
     file_write,
+    /* TODO: Convert to new style read function */
     bread_conv,
     file_read,
     file_puts,

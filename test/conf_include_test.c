@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2021 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -16,9 +16,7 @@
 #ifdef _WIN32
 # include <direct.h>
 # define DIRSEP "/\\"
-# ifndef __BORLANDC__
-#  define chdir _chdir
-# endif
+# define chdir _chdir
 # define DIRSEP_PRESERVE 0
 #elif !defined(OPENSSL_NO_POSIX_IO)
 # include <unistd.h>
@@ -42,7 +40,7 @@ static int change_path(const char *file)
     char *s = OPENSSL_strdup(file);
     char *p = s;
     char *last = NULL;
-    int ret = 0;
+    int ret;
 
     if (s == NULL)
         return -1;
@@ -51,12 +49,11 @@ static int change_path(const char *file)
         last = p++;
     }
     if (last == NULL)
-        goto err;
+        return 0;
     last[DIRSEP_PRESERVE] = 0;
 
     TEST_note("changing path to %s", s);
     ret = chdir(s);
- err:
     OPENSSL_free(s);
     return ret;
 }

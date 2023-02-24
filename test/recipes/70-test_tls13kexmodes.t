@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2017-2021 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2017-2018 The OpenSSL Project Authors. All Rights Reserved.
 #
 # Licensed under the Apache License 2.0 (the "License").  You may not use
 # this file except in compliance with the License.  You can obtain a copy
@@ -26,10 +26,14 @@ plan skip_all => "$test_name needs the sock feature enabled"
     if disabled("sock");
 
 plan skip_all => "$test_name needs TLSv1.3 enabled"
-    if disabled("tls1_3") || (disabled("ec") && disabled("dh"));
+    if disabled("tls1_3");
 
 plan skip_all => "$test_name needs EC enabled"
     if disabled("ec");
+
+$ENV{OPENSSL_ia32cap} = '~0x200000200000000';
+$ENV{CTLOG_FILE} = srctop_file("test", "ct", "log_list.conf");
+
 
 @handmessages = (
     [TLSProxy::Message::MT_CLIENT_HELLO,
@@ -194,14 +198,17 @@ $proxy->start() or plan skip_all => "Unable to start up Proxy for tests";
 plan tests => 11;
 ok(TLSProxy::Message->success(), "Initial connection");
 
-#Test 2: Attempt a resume with no kex modes extension. Should fail (server
-#        MUST abort handshake with pre_shared key and no psk_kex_modes)
+#Test 2: Attempt a resume with no kex modes extension. Should not resume
 $proxy->clear();
 $proxy->clientflags("-sess_in ".$session);
 my $testtype = DELETE_EXTENSION;
 $proxy->filter(\&modify_kex_modes_filter);
 $proxy->start();
-ok(TLSProxy::Message->fail(), "Resume with no kex modes");
+checkhandshake($proxy, checkhandshake::DEFAULT_HANDSHAKE,
+               checkhandshake::DEFAULT_EXTENSIONS
+               | checkhandshake::KEY_SHARE_SRV_EXTENSION
+               | checkhandshake::PSK_CLI_EXTENSION,
+               "Resume with no kex modes");
 
 #Test 3: Attempt a resume with empty kex modes extension. Should fail (empty
 #        extension is invalid)
@@ -239,7 +246,6 @@ checkhandshake($proxy, checkhandshake::RESUME_HANDSHAKE,
                "Resume with non-dhe kex mode");
 
 #Test 6: Attempt a resume with only unrecognised kex modes. Should not resume
-#        but rather fall back to full handshake
 $proxy->clear();
 $proxy->clientflags("-sess_in ".$session);
 $testtype = UNKNOWN_KEX_MODES;
@@ -249,7 +255,7 @@ checkhandshake($proxy, checkhandshake::DEFAULT_HANDSHAKE,
                | checkhandshake::PSK_KEX_MODES_EXTENSION
                | checkhandshake::KEY_SHARE_SRV_EXTENSION
                | checkhandshake::PSK_CLI_EXTENSION,
-               "Resume with unrecognized kex mode");
+               "Resume with empty kex modes");
 
 #Test 7: Attempt a resume with both non-dhe and dhe kex mode. Should resume with
 #        a key_share

@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2016 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -15,16 +15,7 @@
  * 1.1 added norm_expand_bits
  * 1.0 First working version
  */
-
-/*
- * DES low level APIs are deprecated for public use, but still ok for internal
- * use.
- */
-#include "internal/deprecated.h"
-
 #include <openssl/crypto.h>
-#include "internal/constant_time.h"
-#include "internal/nelem.h"
 #include "des_local.h"
 
 static const unsigned char odd_parity[256] = {
@@ -64,23 +55,15 @@ void DES_set_odd_parity(DES_cblock *key)
         (*key)[i] = odd_parity[(*key)[i]];
 }
 
-/*
- * Check that a key has the correct parity.
- * Return 1 if parity is okay and 0 if not.
- */
 int DES_check_key_parity(const_DES_cblock *key)
 {
     unsigned int i;
-    unsigned char res = 0377, b;
 
     for (i = 0; i < DES_KEY_SZ; i++) {
-        b = (*key)[i];
-        b ^= b >> 4;
-        b ^= b >> 2;
-        b ^= b >> 1;
-        res &= constant_time_eq_8(b & 1, 1);
+        if ((*key)[i] != odd_parity[(*key)[i]])
+            return 0;
     }
-    return (int)(res & 1);
+    return 1;
 }
 
 /*-
@@ -91,7 +74,8 @@ int DES_check_key_parity(const_DES_cblock *key)
  * %I John Wiley & Sons
  * %D 1984
  */
-static const DES_cblock weak_keys[] = {
+#define NUM_WEAK_KEY    16
+static const DES_cblock weak_keys[NUM_WEAK_KEY] = {
     /* weak keys */
     {0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01},
     {0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE, 0xFE},
@@ -112,20 +96,14 @@ static const DES_cblock weak_keys[] = {
     {0xFE, 0xE0, 0xFE, 0xE0, 0xFE, 0xF1, 0xFE, 0xF1}
 };
 
-/*
- * Check for weak keys.
- * Return 1 if the key is weak and 0 otherwise.
- */
 int DES_is_weak_key(const_DES_cblock *key)
 {
-    unsigned int i, res = 0;
-    int j;
+    int i;
 
-    for (i = 0; i < OSSL_NELEM(weak_keys); i++) {
-        j = CRYPTO_memcmp(weak_keys[i], key, sizeof(DES_cblock));
-        res |= constant_time_is_zero((unsigned int)j);
-    }
-    return (int)(res & 1);
+    for (i = 0; i < NUM_WEAK_KEY; i++)
+        if (memcmp(weak_keys[i], key, sizeof(DES_cblock)) == 0)
+            return 1;
+    return 0;
 }
 
 /*-
@@ -294,17 +272,9 @@ static const DES_LONG des_skb[8][64] = {
      }
 };
 
-/* Return values as DES_set_key_checked() but always set the key */
 int DES_set_key(const_DES_cblock *key, DES_key_schedule *schedule)
 {
-    int ret = 0;
-
-    if (!DES_check_key_parity(key))
-        ret = -1;
-    if (DES_is_weak_key(key))
-        ret = -2;
-    DES_set_key_unchecked(key, schedule);
-    return ret;
+    return DES_set_key_checked(key, schedule);
 }
 
 /*-

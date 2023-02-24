@@ -180,7 +180,7 @@ discussions.
   available to (or supplied by) the application with no further internal copies
   made.
 
-MVP Requirements (3.2)
+MVP Requirements (3.1)
 ----------------------
 
 This section summarises those requirements from the above that are specific to

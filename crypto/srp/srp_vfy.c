@@ -191,8 +191,10 @@ SRP_user_pwd *SRP_user_pwd_new(void)
 {
     SRP_user_pwd *ret;
 
-    if ((ret = OPENSSL_malloc(sizeof(*ret))) == NULL)
+    if ((ret = OPENSSL_malloc(sizeof(*ret))) == NULL) {
+        /* ERR_raise(ERR_LIB_SRP, ERR_R_MALLOC_FAILURE); */ /*ckerr_ignore*/
         return NULL;
+    }
     ret->N = NULL;
     ret->g = NULL;
     ret->s = NULL;
@@ -391,7 +393,7 @@ static BIGNUM *SRP_gN_place_bn(STACK_OF(SRP_gN_cache) *gN_cache, char *ch)
 
 int SRP_VBASE_init(SRP_VBASE *vb, char *verifier_file)
 {
-    int error_code = SRP_ERR_MEMORY;
+    int error_code;
     STACK_OF(SRP_gN) *SRP_gN_tab = sk_SRP_gN_new_null();
     char *last_index = NULL;
     int i;
@@ -402,9 +404,6 @@ int SRP_VBASE_init(SRP_VBASE *vb, char *verifier_file)
 
     TXT_DB *tmpdb = NULL;
     BIO *in = BIO_new(BIO_s_file());
-
-    if (SRP_gN_tab == NULL)
-        goto err;
 
     error_code = SRP_ERR_OPEN_FILE;
 

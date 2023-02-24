@@ -54,9 +54,6 @@ get_version () {
                          -e 's|^dev$|0|' \
                          -e 's|^alpha([0-9]+)(-(dev))?$|\1|' \
                          -e 's|^beta([0-9]+)(-(dev))?$|\1|' )
-    _BUILD_METADATA=''
-    if [ -n "$PRE_RELEASE_TAG" ]; then _PRE_RELEASE_TAG="-${PRE_RELEASE_TAG}"; fi
-    if [ -n "$BUILD_METADATA" ]; then _BUILD_METADATA="+${BUILD_METADATA}"; fi
 }
 
 # $1 is one of "alpha", "beta", "final", "", or "minor"
@@ -105,7 +102,6 @@ set_version () {
             PRE_RELEASE_TAG="$PRE_LABEL$PRE_NUM"
             ;;
     esac
-    if [ -n "$PRE_RELEASE_TAG" ]; then _PRE_RELEASE_TAG="-${PRE_RELEASE_TAG}"; fi
     cat > "$SOURCEDIR/VERSION.dat" <<EOF
 MAJOR=$MAJOR
 MINOR=$MINOR

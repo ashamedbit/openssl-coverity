@@ -451,7 +451,6 @@ static int test_bio_dgram(int idx)
                                bio_dgram_cases[idx].local);
 }
 
-# if !defined(OPENSSL_NO_CHACHA)
 static int random_data(const uint32_t *key, uint8_t *data, size_t data_len, size_t offset)
 {
     int ret = 0, outl;
@@ -489,14 +488,14 @@ err:
     return ret;
 }
 
-static int test_bio_dgram_pair(int idx)
+static int test_bio_dgram_pair(void)
 {
     int testresult = 0, blen, mtu1, mtu2, r;
     BIO *bio1 = NULL, *bio2 = NULL;
     uint8_t scratch[2048 + 4], scratch2[2048];
     uint32_t key[8];
     size_t i, num_dgram, num_processed = 0;
-    BIO_MSG msgs[2], rmsgs[2];
+    BIO_MSG msgs[2] = {0}, rmsgs[2] = {0};
     BIO_ADDR *addr1 = NULL, *addr2 = NULL, *addr3 = NULL, *addr4 = NULL;
     struct in_addr in_local;
     size_t total = 0;
@@ -505,21 +504,13 @@ static int test_bio_dgram_pair(int idx)
                             | BIO_DGRAM_CAP_PROVIDES_SRC_ADDR
                             | BIO_DGRAM_CAP_PROVIDES_DST_ADDR;
 
-    memset(msgs, 0, sizeof(msgs));
-    memset(rmsgs, 0, sizeof(rmsgs));
-
     in_local.s_addr = ntohl(0x7f000001);
 
     for (i = 0; i < OSSL_NELEM(key); ++i)
         key[i] = test_random();
 
-    if (idx == 0) {
-        if (!TEST_int_eq(BIO_new_bio_dgram_pair(&bio1, 0, &bio2, 0), 1))
-            goto err;
-    } else {
-        if (!TEST_ptr(bio1 = bio2 = BIO_new(BIO_s_dgram_mem())))
-            goto err;
-    }
+    if (!TEST_int_eq(BIO_new_bio_dgram_pair(&bio1, 0, &bio2, 0), 1))
+        goto err;
 
     mtu1 = BIO_dgram_get_mtu(bio1);
     if (!TEST_int_ge(mtu1, 1280))
@@ -535,7 +526,7 @@ static int test_bio_dgram_pair(int idx)
     if (!TEST_int_le(mtu1, sizeof(scratch) - 4))
         goto err;
 
-    for (i = 0; idx == 0 || i < 9; ++i) {
+    for (i = 0;; ++i) {
         if (!TEST_int_eq(random_data(key, scratch, sizeof(scratch), i), 1))
             goto err;
 
@@ -635,8 +626,8 @@ static int test_bio_dgram_pair(int idx)
     msgs[0].peer = addr1;
 
     /* fails due to lack of caps on peer */
-    if (!TEST_false(BIO_sendmmsg(bio1, msgs, sizeof(BIO_MSG),
-                                 OSSL_NELEM(msgs), 0, &num_processed))
+    if (!TEST_false(BIO_sendmmsg(bio1, msgs, sizeof(BIO_MSG), OSSL_NELEM(msgs),
+                                 0, &num_processed))
         || !TEST_size_t_eq(num_processed, 0))
         goto err;
 
@@ -649,7 +640,7 @@ static int test_bio_dgram_pair(int idx)
     if (!TEST_int_eq(BIO_dgram_get_effective_caps(bio1), ref_caps))
         goto err;
 
-    if (idx == 0 && !TEST_int_eq(BIO_dgram_get_effective_caps(bio2), 0))
+    if (!TEST_int_eq(BIO_dgram_get_effective_caps(bio2), 0))
         goto err;
 
     if (!TEST_int_eq(BIO_dgram_set_caps(bio1, ref_caps), 1))
@@ -744,8 +735,7 @@ static int test_bio_dgram_pair(int idx)
 
     testresult = 1;
 err:
-    if (idx == 0)
-        BIO_free(bio1);
+    BIO_free(bio1);
     BIO_free(bio2);
     BIO_ADDR_free(addr1);
     BIO_ADDR_free(addr2);
@@ -753,7 +743,7 @@ err:
     BIO_ADDR_free(addr4);
     return testresult;
 }
-# endif /* !defined(OPENSSL_NO_CHACHA) */
+
 #endif /* !defined(OPENSSL_NO_DGRAM) && !defined(OPENSSL_NO_SOCK) */
 
 int setup_tests(void)
@@ -765,9 +755,7 @@ int setup_tests(void)
 
 #if !defined(OPENSSL_NO_DGRAM) && !defined(OPENSSL_NO_SOCK)
     ADD_ALL_TESTS(test_bio_dgram, OSSL_NELEM(bio_dgram_cases));
-# if !defined(OPENSSL_NO_CHACHA)
-    ADD_ALL_TESTS(test_bio_dgram_pair, 2);
-# endif
+    ADD_TEST(test_bio_dgram_pair);
 #endif
 
     return 1;

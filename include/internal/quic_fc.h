@@ -13,8 +13,6 @@
 # include <openssl/ssl.h>
 # include "internal/time.h"
 
-# ifndef OPENSSL_NO_QUIC
-
 /*
  * TX Flow Controller (TXFC)
  * =========================
@@ -174,8 +172,10 @@ void ossl_quic_rxfc_set_max_window_size(QUIC_RXFC *rxfc,
  *
  * is_fin should be 1 if the STREAM frame had the FIN flag set and 0 otherwise.
  *
- * This function may be used on a stream-level RXFC only. The connection-level
- * RXFC will have its state updated by the stream-level RXFC.
+ * conn_rxfc should point to a connection-level RXFC, which will have its state
+ * updated correctly by the stream-level RXFC.
+ *
+ * This function may be used on a stream-level RXFC only.
  *
  * You should check ossl_quic_rxfc_has_error() on both connection-level and
  * stream-level RXFCs after calling this function, as an incoming STREAM frame
@@ -252,7 +252,5 @@ int ossl_quic_rxfc_has_cwm_changed(QUIC_RXFC *rxfc, int clear);
  *   The peer attempted to change the stream length after ending the stream.
  */
 int ossl_quic_rxfc_get_error(QUIC_RXFC *rxfc, int clear);
-
-# endif
 
 #endif

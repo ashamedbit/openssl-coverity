@@ -21,13 +21,6 @@ SSL_read and SSL_write functions.
 They will be bypassed with a single-copy API for read and write (_not
 for MVP_).
 
-Frame in Flight Manager
------------------------
-
-The frame in flight manager manages the queueing of frames which may need to be
-retransmitted if the packets in which they were transmitted were lost. It is
-[discussed in more detail here.](./quic-fifm.md)
-
 Connection State Machine
 ------------------------
 
@@ -72,17 +65,12 @@ either as data or as events to the subsequent modules based on the frame
 type. Flow Controller And Statistics Collector is consulted for decisions
 and to record the statistics of the received stream data.
 
-Flow Controller
----------------
+Flow Controller And Statistics Collector
+----------------------------------------
 
-This module is consulted by the TX Packetizer and RX Frame Handler for flow
-control decisions at both the stream and connection levels.
-
-Statistics Collector
---------------------
-
-This module maintains statistics about a connection, most notably the estimated
-round trip time to the remote peer.
+This module collects various statistics about send and received
+stream data. It is also consulted by the TX Packetizer and RX Frame
+Handler for flow control decisions.
 
 QUIC Write Record Layer
 -----------------------

@@ -119,7 +119,7 @@ static int process_pci_value(CONF_VALUE *val,
         if (*policy == NULL) {
             *policy = ASN1_OCTET_STRING_new();
             if (*policy == NULL) {
-                ERR_raise(ERR_LIB_X509V3, ERR_R_ASN1_LIB);
+                ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
                 X509V3_conf_err(val);
                 return 0;
             }
@@ -151,6 +151,7 @@ static int process_pci_value(CONF_VALUE *val,
                 OPENSSL_free((*policy)->data);
                 (*policy)->data = NULL;
                 (*policy)->length = 0;
+                ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
                 X509V3_conf_err(val);
                 goto err;
             }
@@ -176,6 +177,7 @@ static int process_pci_value(CONF_VALUE *val,
                     OPENSSL_free((*policy)->data);
                     (*policy)->data = NULL;
                     (*policy)->length = 0;
+                    ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
                     X509V3_conf_err(val);
                     BIO_free_all(b);
                     goto err;
@@ -211,6 +213,7 @@ static int process_pci_value(CONF_VALUE *val,
                 OPENSSL_free((*policy)->data);
                 (*policy)->data = NULL;
                 (*policy)->length = 0;
+                ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
                 X509V3_conf_err(val);
                 goto err;
             }
@@ -220,6 +223,7 @@ static int process_pci_value(CONF_VALUE *val,
             goto err;
         }
         if (!tmp_data) {
+            ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
             X509V3_conf_err(val);
             goto err;
         }
@@ -293,7 +297,7 @@ static PROXY_CERT_INFO_EXTENSION *r2i_pci(X509V3_EXT_METHOD *method,
 
     pci = PROXY_CERT_INFO_EXTENSION_new();
     if (pci == NULL) {
-        ERR_raise(ERR_LIB_X509V3, ERR_R_ASN1_LIB);
+        ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 

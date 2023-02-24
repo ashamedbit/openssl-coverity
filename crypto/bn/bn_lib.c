@@ -244,8 +244,10 @@ BIGNUM *BN_new(void)
 {
     BIGNUM *ret;
 
-    if ((ret = OPENSSL_zalloc(sizeof(*ret))) == NULL)
+    if ((ret = OPENSSL_zalloc(sizeof(*ret))) == NULL) {
+        ERR_raise(ERR_LIB_BN, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
     ret->flags = BN_FLG_MALLOCED;
     bn_check_top(ret);
     return ret;
@@ -277,8 +279,10 @@ static BN_ULONG *bn_expand_internal(const BIGNUM *b, int words)
         a = OPENSSL_secure_zalloc(words * sizeof(*a));
     else
         a = OPENSSL_zalloc(words * sizeof(*a));
-    if (a == NULL)
+    if (a == NULL) {
+        ERR_raise(ERR_LIB_BN, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
 
     assert(b->top <= words);
     if (b->top > 0)
@@ -440,24 +444,11 @@ static BIGNUM *bin2bn(const unsigned char *s, int len, BIGNUM *ret,
     unsigned int n;
     BIGNUM *bn = NULL;
 
-    /* Negative length is not acceptable */
-    if (len < 0)
-        return NULL;
-
     if (ret == NULL)
         ret = bn = BN_new();
     if (ret == NULL)
         return NULL;
     bn_check_top(ret);
-
-    /*
-     * If the input has no bits, the number is considered zero.
-     * This makes calls with s==NULL and len==0 safe.
-     */
-    if (len == 0) {
-        BN_clear(ret);
-        return ret;
-    }
 
     /*
      * The loop that does the work iterates from least to most
@@ -1053,8 +1044,10 @@ BN_GENCB *BN_GENCB_new(void)
 {
     BN_GENCB *ret;
 
-    if ((ret = OPENSSL_malloc(sizeof(*ret))) == NULL)
+    if ((ret = OPENSSL_malloc(sizeof(*ret))) == NULL) {
+        ERR_raise(ERR_LIB_BN, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
 
     return ret;
 }

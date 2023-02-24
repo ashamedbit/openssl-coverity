@@ -60,21 +60,7 @@ when a matching identifier is found. There is no way to restrict the list
 of compression methods supported on a per connection basis.
 
 If enabled during compilation, the OpenSSL library will have the
-following compression methods available:
-
-=over 4
-
-=item COMP_zlib()
-
-=item COMP_brotli()
-
-=item COMP_brotli_oneshot()
-
-=item COMP_zstd()
-
-=item COMP_zstd_oneshot()
-
-=back
+COMP_zlib() compression method available.
 
 =head1 RETURN VALUES
 

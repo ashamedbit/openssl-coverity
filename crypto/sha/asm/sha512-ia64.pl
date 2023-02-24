@@ -78,7 +78,7 @@
 # $output is the last argument if it looks like a file (it has an extension)
 $output = $#ARGV >= 0 && $ARGV[$#ARGV] =~ m|\.\w+$| ? pop : undef;
 
-if ($output =~ /512.*\.[s|asm]/i) {
+if ($output =~ /512.*\.[s|asm]/) {
 	$SZ=8;
 	$BITS=8*$SZ;
 	$LDW="ld8";
@@ -92,7 +92,7 @@ if ($output =~ /512.*\.[s|asm]/i) {
 	@sigma0=(1,  8, 7);
 	@sigma1=(19,61, 6);
 	$rounds=80;
-} elsif ($output =~ /256.*\.[s|asm]/i) {
+} elsif ($output =~ /256.*\.[s|asm]/) {
 	$SZ=4;
 	$BITS=8*$SZ;
 	$LDW="ld4";

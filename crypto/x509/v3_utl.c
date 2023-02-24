@@ -56,10 +56,8 @@ static int x509v3_add_len_value(const char *name, const char *value,
     }
     if ((vtmp = OPENSSL_malloc(sizeof(*vtmp))) == NULL)
         goto err;
-    if (sk_allocated && (*extlist = sk_CONF_VALUE_new_null()) == NULL) {
-        ERR_raise(ERR_LIB_X509V3, ERR_R_CRYPTO_LIB);
+    if (sk_allocated && (*extlist = sk_CONF_VALUE_new_null()) == NULL)
         goto err;
-    }
     vtmp->section = NULL;
     vtmp->name = tname;
     vtmp->value = tvalue;
@@ -67,6 +65,7 @@ static int x509v3_add_len_value(const char *name, const char *value,
         goto err;
     return 1;
  err:
+    ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
     if (sk_allocated) {
         sk_CONF_VALUE_free(*extlist);
         *extlist = NULL;
@@ -147,6 +146,7 @@ static char *bignum_to_string(const BIGNUM *bn)
     len = strlen(tmp) + 3;
     ret = OPENSSL_malloc(len);
     if (ret == NULL) {
+        ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
         OPENSSL_free(tmp);
         return NULL;
     }
@@ -170,10 +170,9 @@ char *i2s_ASN1_ENUMERATED(X509V3_EXT_METHOD *method, const ASN1_ENUMERATED *a)
 
     if (!a)
         return NULL;
-    if ((bntmp = ASN1_ENUMERATED_to_BN(a, NULL)) == NULL)
-        ERR_raise(ERR_LIB_X509V3, ERR_R_ASN1_LIB);
-    else if ((strtmp = bignum_to_string(bntmp)) == NULL)
-        ERR_raise(ERR_LIB_X509V3, ERR_R_X509V3_LIB);
+    if ((bntmp = ASN1_ENUMERATED_to_BN(a, NULL)) == NULL
+        || (strtmp = bignum_to_string(bntmp)) == NULL)
+        ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
     BN_free(bntmp);
     return strtmp;
 }
@@ -185,10 +184,9 @@ char *i2s_ASN1_INTEGER(X509V3_EXT_METHOD *method, const ASN1_INTEGER *a)
 
     if (!a)
         return NULL;
-    if ((bntmp = ASN1_INTEGER_to_BN(a, NULL)) == NULL)
-        ERR_raise(ERR_LIB_X509V3, ERR_R_ASN1_LIB);
-    else if ((strtmp = bignum_to_string(bntmp)) == NULL)
-        ERR_raise(ERR_LIB_X509V3, ERR_R_X509V3_LIB);
+    if ((bntmp = ASN1_INTEGER_to_BN(a, NULL)) == NULL
+        || (strtmp = bignum_to_string(bntmp)) == NULL)
+        ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
     BN_free(bntmp);
     return strtmp;
 }
@@ -206,7 +204,7 @@ ASN1_INTEGER *s2i_ASN1_INTEGER(X509V3_EXT_METHOD *method, const char *value)
     }
     bn = BN_new();
     if (bn == NULL) {
-        ERR_raise(ERR_LIB_X509V3, ERR_R_BN_LIB);
+        ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
         return NULL;
     }
     if (value[0] == '-') {
@@ -322,8 +320,10 @@ STACK_OF(CONF_VALUE) *X509V3_parse_list(const char *line)
 
     /* We are going to modify the line so copy it first */
     linebuf = OPENSSL_strdup(line);
-    if (linebuf == NULL)
+    if (linebuf == NULL) {
+        ERR_raise(ERR_LIB_X509V3, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
     state = HDR_NAME;
     ntmp = NULL;
     /* Go through all characters */

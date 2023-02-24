@@ -22,12 +22,14 @@ static EVP_SIGNATURE *evp_signature_new(OSSL_PROVIDER *prov)
 {
     EVP_SIGNATURE *signature = OPENSSL_zalloc(sizeof(EVP_SIGNATURE));
 
-    if (signature == NULL)
+    if (signature == NULL) {
+        ERR_raise(ERR_LIB_EVP, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
 
     signature->lock = CRYPTO_THREAD_lock_new();
     if (signature->lock == NULL) {
-        ERR_raise(ERR_LIB_EVP, ERR_R_CRYPTO_LIB);
+        ERR_raise(ERR_LIB_EVP, ERR_R_MALLOC_FAILURE);
         OPENSSL_free(signature);
         return NULL;
     }
@@ -49,7 +51,7 @@ static void *evp_signature_from_algorithm(int name_id,
     int gparamfncnt = 0, sparamfncnt = 0, gmdparamfncnt = 0, smdparamfncnt = 0;
 
     if ((signature = evp_signature_new(prov)) == NULL) {
-        ERR_raise(ERR_LIB_EVP, ERR_R_EVP_LIB);
+        ERR_raise(ERR_LIB_EVP, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 

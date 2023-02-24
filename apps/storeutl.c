@@ -165,7 +165,8 @@ int storeutl_main(int argc, char *argv[])
             break;
         case OPT_CRITERION_ISSUER:
             if (criterion != 0
-                && criterion != OSSL_STORE_SEARCH_BY_ISSUER_SERIAL) {
+                || (criterion == OSSL_STORE_SEARCH_BY_ISSUER_SERIAL
+                    && issuer != NULL)) {
                 BIO_printf(bio_err, "%s: criterion already given.\n",
                            prog);
                 goto end;
@@ -182,7 +183,8 @@ int storeutl_main(int argc, char *argv[])
             break;
         case OPT_CRITERION_SERIAL:
             if (criterion != 0
-                && criterion != OSSL_STORE_SEARCH_BY_ISSUER_SERIAL) {
+                || (criterion == OSSL_STORE_SEARCH_BY_ISSUER_SERIAL
+                    && serial != NULL)) {
                 BIO_printf(bio_err, "%s: criterion already given.\n",
                            prog);
                 goto end;

@@ -10,7 +10,7 @@
  */
 
 /* Serialized OID's */
-static const unsigned char so[8364] = {
+static const unsigned char so[8356] = {
     0x2A,0x86,0x48,0x86,0xF7,0x0D,                 /* [    0] OBJ_rsadsi */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,            /* [    6] OBJ_pkcs */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x02,0x02,       /* [   13] OBJ_md2 */
@@ -1152,10 +1152,9 @@ static const unsigned char so[8364] = {
     0x60,0x86,0x48,0x01,0x86,0xF9,0x66,            /* [ 8325] OBJ_oracle */
     0x60,0x86,0x48,0x01,0x86,0xF9,0x66,0xAD,0xCA,0x7B,0x01,0x01,  /* [ 8332] OBJ_oracle_jdk_trustedkeyusage */
     0x2A,0x86,0x48,0x86,0xF7,0x0D,0x01,0x09,0x10,0x01,0x32,  /* [ 8344] OBJ_id_ct_signedTAL */
-    0x2A,0x81,0x1C,0xCF,0x55,0x01,0x68,0x0A,       /* [ 8355] OBJ_sm4_xts */
 };
 
-#define NUM_NID 1291
+#define NUM_NID 1285
 static const ASN1_OBJECT nid_objs[NUM_NID] = {
     {"UNDEF", "undefined", NID_undef},
     {"rsadsi", "RSA Data Security, Inc.", NID_rsadsi, 6, &so[0]},
@@ -2442,15 +2441,9 @@ static const ASN1_OBJECT nid_objs[NUM_NID] = {
     {"oracle-organization", "Oracle organization", NID_oracle, 7, &so[8325]},
     {"oracle-jdk-trustedkeyusage", "Trusted key usage (Oracle)", NID_oracle_jdk_trustedkeyusage, 12, &so[8332]},
     {"id-ct-signedTAL", "id-ct-signedTAL", NID_id_ct_signedTAL, 11, &so[8344]},
-    {"brainpoolP256r1tls13", "brainpoolP256r1tls13", NID_brainpoolP256r1tls13},
-    {"brainpoolP384r1tls13", "brainpoolP384r1tls13", NID_brainpoolP384r1tls13},
-    {"brainpoolP512r1tls13", "brainpoolP512r1tls13", NID_brainpoolP512r1tls13},
-    {"brotli", "Brotli compression", NID_brotli},
-    {"zstd", "Zstandard compression", NID_zstd},
-    {"SM4-XTS", "sm4-xts", NID_sm4_xts, 8, &so[8355]},
 };
 
-#define NUM_SN 1282
+#define NUM_SN 1276
 static const unsigned int sn_objs[NUM_SN] = {
      364,    /* "AD_DVCS" */
      419,    /* "AES-128-CBC" */
@@ -2737,7 +2730,6 @@ static const unsigned int sn_objs[NUM_SN] = {
     1133,    /* "SM4-ECB" */
     1248,    /* "SM4-GCM" */
     1135,    /* "SM4-OFB" */
-    1290,    /* "SM4-XTS" */
      188,    /* "SMIME" */
      167,    /* "SMIME-CAPS" */
      100,    /* "SN" */
@@ -2789,17 +2781,13 @@ static const unsigned int sn_objs[NUM_SN] = {
      925,    /* "brainpoolP224r1" */
      926,    /* "brainpoolP224t1" */
      927,    /* "brainpoolP256r1" */
-    1285,    /* "brainpoolP256r1tls13" */
      928,    /* "brainpoolP256t1" */
      929,    /* "brainpoolP320r1" */
      930,    /* "brainpoolP320t1" */
      931,    /* "brainpoolP384r1" */
-    1286,    /* "brainpoolP384r1tls13" */
      932,    /* "brainpoolP384t1" */
      933,    /* "brainpoolP512r1" */
-    1287,    /* "brainpoolP512r1tls13" */
      934,    /* "brainpoolP512t1" */
-    1288,    /* "brotli" */
      494,    /* "buildingName" */
      860,    /* "businessCategory" */
      691,    /* "c2onb191v4" */
@@ -3733,10 +3721,9 @@ static const unsigned int sn_objs[NUM_SN] = {
      158,    /* "x509Certificate" */
      160,    /* "x509Crl" */
     1093,    /* "x509ExtAdmission" */
-    1289,    /* "zstd" */
 };
 
-#define NUM_LN 1282
+#define NUM_LN 1276
 static const unsigned int ln_objs[NUM_LN] = {
      363,    /* "AD Time Stamping" */
      405,    /* "ANSI X9.62" */
@@ -3748,7 +3735,6 @@ static const unsigned int ln_objs[NUM_LN] = {
      365,    /* "Basic OCSP Response" */
      285,    /* "Biometric Info" */
     1221,    /* "Brand Indicator for Message Identification" */
-    1288,    /* "Brotli compression" */
      179,    /* "CA Issuers" */
      785,    /* "CA Repository" */
     1219,    /* "CMC Archive Server" */
@@ -3966,7 +3952,6 @@ static const unsigned int ln_objs[NUM_LN] = {
      184,    /* "X9.57" */
      185,    /* "X9.57 CM ?" */
     1209,    /* "XmppAddr" */
-    1289,    /* "Zstandard compression" */
      478,    /* "aRecord" */
      289,    /* "aaControls" */
      287,    /* "ac-auditEntity" */
@@ -4072,15 +4057,12 @@ static const unsigned int ln_objs[NUM_LN] = {
      925,    /* "brainpoolP224r1" */
      926,    /* "brainpoolP224t1" */
      927,    /* "brainpoolP256r1" */
-    1285,    /* "brainpoolP256r1tls13" */
      928,    /* "brainpoolP256t1" */
      929,    /* "brainpoolP320r1" */
      930,    /* "brainpoolP320t1" */
      931,    /* "brainpoolP384r1" */
-    1286,    /* "brainpoolP384r1tls13" */
      932,    /* "brainpoolP384t1" */
      933,    /* "brainpoolP512r1" */
-    1287,    /* "brainpoolP512r1tls13" */
      934,    /* "brainpoolP512t1" */
      494,    /* "buildingName" */
      860,    /* "businessCategory" */
@@ -4969,7 +4951,6 @@ static const unsigned int ln_objs[NUM_LN] = {
     1133,    /* "sm4-ecb" */
     1248,    /* "sm4-gcm" */
     1135,    /* "sm4-ofb" */
-    1290,    /* "sm4-xts" */
     1203,    /* "sshkdf" */
     1205,    /* "sskdf" */
       16,    /* "stateOrProvinceName" */
@@ -5022,7 +5003,7 @@ static const unsigned int ln_objs[NUM_LN] = {
      125,    /* "zlib compression" */
 };
 
-#define NUM_OBJ 1148
+#define NUM_OBJ 1147
 static const unsigned int obj_objs[NUM_OBJ] = {
        0,    /* OBJ_undef                        0 */
      181,    /* OBJ_iso                          1 */
@@ -5518,7 +5499,6 @@ static const unsigned int obj_objs[NUM_OBJ] = {
     1139,    /* OBJ_sm4_ctr                      1 2 156 10197 1 104 7 */
     1248,    /* OBJ_sm4_gcm                      1 2 156 10197 1 104 8 */
     1249,    /* OBJ_sm4_ccm                      1 2 156 10197 1 104 9 */
-    1290,    /* OBJ_sm4_xts                      1 2 156 10197 1 104 10 */
     1172,    /* OBJ_sm2                          1 2 156 10197 1 301 */
     1143,    /* OBJ_sm3                          1 2 156 10197 1 401 */
     1204,    /* OBJ_SM2_with_SM3                 1 2 156 10197 1 501 */

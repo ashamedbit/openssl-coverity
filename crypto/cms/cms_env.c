@@ -66,7 +66,7 @@ static CMS_EnvelopedData *cms_enveloped_data_init(CMS_ContentInfo *cms)
     if (cms->d.other == NULL) {
         cms->d.envelopedData = M_ASN1_new_of(CMS_EnvelopedData);
         if (cms->d.envelopedData == NULL) {
-            ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
+            ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
             return NULL;
         }
         cms->d.envelopedData->version = 0;
@@ -85,7 +85,7 @@ cms_auth_enveloped_data_init(CMS_ContentInfo *cms)
     if (cms->d.other == NULL) {
         cms->d.authEnvelopedData = M_ASN1_new_of(CMS_AuthEnvelopedData);
         if (cms->d.authEnvelopedData == NULL) {
-            ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
+            ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
             return NULL;
         }
         /* Defined in RFC 5083 - Section 2.1. "AuthEnvelopedData Type" */
@@ -138,7 +138,7 @@ int ossl_cms_env_asn1_ctrl(CMS_RecipientInfo *ri, int cmd)
     return 1;
 }
 
-CMS_EncryptedContentInfo *ossl_cms_get0_env_enc_content(const CMS_ContentInfo *cms)
+CMS_EncryptedContentInfo* ossl_cms_get0_env_enc_content(const CMS_ContentInfo *cms)
 {
     switch (cms_get_enveloped_type(cms)) {
     case CMS_ENVELOPED_STANDARD:
@@ -222,18 +222,18 @@ CMS_ContentInfo *CMS_EnvelopedData_create_ex(const EVP_CIPHER *cipher,
 
     cms = CMS_ContentInfo_new_ex(libctx, propq);
     if (cms == NULL)
-        goto err;
+        goto merr;
     env = cms_enveloped_data_init(cms);
     if (env == NULL)
-        goto err;
+        goto merr;
 
     if (!ossl_cms_EncryptedContent_init(env->encryptedContentInfo, cipher, NULL,
                                         0, ossl_cms_get0_cmsctx(cms)))
-        goto err;
+        goto merr;
     return cms;
- err:
+ merr:
     CMS_ContentInfo_free(cms);
-    ERR_raise(ERR_LIB_CMS, ERR_R_CMS_LIB);
+    ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
     return NULL;
 }
 
@@ -266,8 +266,7 @@ BIO *CMS_EnvelopedData_decrypt(CMS_EnvelopedData *env, BIO *detached_data,
                                      ASN1_STRING_get0_data(secret),
                                      ASN1_STRING_length(secret)) != 1)
         goto end;
-    res = CMS_decrypt(ci, secret == NULL ? pkey : NULL,
-                      secret == NULL ? cert : NULL, detached_data, bio, flags);
+    res = CMS_decrypt(ci, pkey, cert, detached_data, bio, flags);
 
  end:
     if (ci != NULL)
@@ -300,7 +299,7 @@ CMS_AuthEnvelopedData_create_ex(const EVP_CIPHER *cipher, OSSL_LIB_CTX *libctx,
     return cms;
  merr:
     CMS_ContentInfo_free(cms);
-    ERR_raise(ERR_LIB_CMS, ERR_R_CMS_LIB);
+    ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
     return NULL;
 }
 
@@ -383,10 +382,8 @@ CMS_RecipientInfo *CMS_add1_recipient(CMS_ContentInfo *cms, X509 *recip,
 
     /* Initialize recipient info */
     ri = M_ASN1_new_of(CMS_RecipientInfo);
-    if (ri == NULL) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
-        goto err;
-    }
+    if (ri == NULL)
+        goto merr;
 
     pk = X509_get0_pubkey(recip);
     if (pk == NULL) {
@@ -413,13 +410,13 @@ CMS_RecipientInfo *CMS_add1_recipient(CMS_ContentInfo *cms, X509 *recip,
 
     }
 
-    if (!sk_CMS_RecipientInfo_push(ris, ri)) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_CRYPTO_LIB);
-        goto err;
-    }
+    if (!sk_CMS_RecipientInfo_push(ris, ri))
+        goto merr;
 
     return ri;
 
+ merr:
+    ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
  err:
     M_ASN1_free_of(ri, CMS_RecipientInfo);
     return NULL;
@@ -530,8 +527,11 @@ static int cms_RecipientInfo_ktri_encrypt(const CMS_ContentInfo *cms,
         goto err;
 
     ek = OPENSSL_malloc(eklen);
-    if (ek == NULL)
+
+    if (ek == NULL) {
+        ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
 
     if (EVP_PKEY_encrypt(pctx, ek, &eklen, ec->key, ec->keylen) <= 0)
         goto err;
@@ -608,21 +608,16 @@ static int cms_RecipientInfo_ktri_decrypt(CMS_ContentInfo *cms,
     if (!ossl_cms_env_asn1_ctrl(ri, 1))
         goto err;
 
-    if (EVP_PKEY_is_a(pkey, "RSA"))
-        /* upper layer CMS code incorrectly assumes that a successful RSA
-         * decryption means that the key matches ciphertext (which never
-         * was the case, implicit rejection or not), so to make it work
-         * disable implicit rejection for RSA keys */
-        EVP_PKEY_CTX_ctrl_str(ktri->pctx, "rsa_pkcs1_implicit_rejection", "0");
-
     if (EVP_PKEY_decrypt(ktri->pctx, NULL, &eklen,
                          ktri->encryptedKey->data,
                          ktri->encryptedKey->length) <= 0)
         goto err;
 
     ek = OPENSSL_malloc(eklen);
-    if (ek == NULL)
+    if (ek == NULL) {
+        ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
 
     if (EVP_PKEY_decrypt(ktri->pctx, ek, &eklen,
                          ktri->encryptedKey->data,
@@ -737,32 +732,24 @@ CMS_RecipientInfo *CMS_add0_recipient_key(CMS_ContentInfo *cms, int nid,
 
     /* Initialize recipient info */
     ri = M_ASN1_new_of(CMS_RecipientInfo);
-    if (!ri) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
-        goto err;
-    }
+    if (!ri)
+        goto merr;
 
     ri->d.kekri = M_ASN1_new_of(CMS_KEKRecipientInfo);
-    if (!ri->d.kekri) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
-        goto err;
-    }
+    if (!ri->d.kekri)
+        goto merr;
     ri->type = CMS_RECIPINFO_KEK;
 
     kekri = ri->d.kekri;
 
     if (otherTypeId) {
         kekri->kekid->other = M_ASN1_new_of(CMS_OtherKeyAttribute);
-        if (kekri->kekid->other == NULL) {
-            ERR_raise(ERR_LIB_CMS, ERR_R_ASN1_LIB);
-            goto err;
-        }
+        if (kekri->kekid->other == NULL)
+            goto merr;
     }
 
-    if (!sk_CMS_RecipientInfo_push(ris, ri)) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_CRYPTO_LIB);
-        goto err;
-    }
+    if (!sk_CMS_RecipientInfo_push(ris, ri))
+        goto merr;
 
     /* After this point no calls can fail */
 
@@ -785,6 +772,8 @@ CMS_RecipientInfo *CMS_add0_recipient_key(CMS_ContentInfo *cms, int nid,
 
     return ri;
 
+ merr:
+    ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
  err:
     M_ASN1_free_of(ri, CMS_RecipientInfo);
     return NULL;
@@ -895,12 +884,14 @@ static int cms_RecipientInfo_kekri_encrypt(const CMS_ContentInfo *cms,
 
     /* 8 byte prefix for AES wrap ciphers */
     wkey = OPENSSL_malloc(ec->keylen + 8);
-    if (wkey == NULL)
+    if (wkey == NULL) {
+        ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
 
     ctx = EVP_CIPHER_CTX_new();
     if (ctx == NULL) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_EVP_LIB);
+        ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -976,12 +967,14 @@ static int cms_RecipientInfo_kekri_decrypt(CMS_ContentInfo *cms,
     }
 
     ukey = OPENSSL_malloc(kekri->encryptedKey->length - 8);
-    if (ukey == NULL)
+    if (ukey == NULL) {
+        ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
 
     ctx = EVP_CIPHER_CTX_new();
     if (ctx == NULL) {
-        ERR_raise(ERR_LIB_CMS, ERR_R_EVP_LIB);
+        ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -1279,7 +1272,7 @@ int ossl_cms_EnvelopedData_final(CMS_ContentInfo *cms, BIO *chain)
             env->unprotectedAttrs = sk_X509_ATTRIBUTE_new_null();
 
         if (env->unprotectedAttrs == NULL) {
-            ERR_raise(ERR_LIB_CMS, ERR_R_CRYPTO_LIB);
+            ERR_raise(ERR_LIB_CMS, ERR_R_MALLOC_FAILURE);
             return 0;
         }
 

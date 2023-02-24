@@ -228,7 +228,6 @@ static OSSL_CMP_MSG *process_cert_request(OSSL_CMP_SRV_CTX *srv_ctx,
     msg = ossl_cmp_certrep_new(srv_ctx->ctx, bodytype, certReqId, si,
                                certOut, NULL /* enc */, chainOut, caPubs,
                                srv_ctx->sendUnprotectedErrors);
-    /* When supporting OSSL_CRMF_POPO_KEYENC, "enc" will need to be set */
     if (msg == NULL)
         ERR_raise(ERR_LIB_CMP, CMP_R_ERROR_CREATING_CERTREP);
 
@@ -339,7 +338,7 @@ static OSSL_CMP_MSG *process_certConf(OSSL_CMP_SRV_CTX *srv_ctx,
     num = sk_OSSL_CMP_CERTSTATUS_num(ccc);
 
     if (OSSL_CMP_CTX_get_option(ctx, OSSL_CMP_OPT_IMPLICIT_CONFIRM) == 1
-            || ctx->status != OSSL_CMP_PKISTATUS_trans) {
+            || ctx->status != -2 /* transaction not open */) {
         ERR_raise(ERR_LIB_CMP, CMP_R_ERROR_UNEXPECTED_CERTCONF);
         return NULL;
     }
@@ -360,8 +359,8 @@ static OSSL_CMP_MSG *process_certConf(OSSL_CMP_SRV_CTX *srv_ctx,
         if (!srv_ctx->process_certConf(srv_ctx, req, certReqId, certHash, si))
             return NULL; /* reason code may be: CMP_R_CERTHASH_UNMATCHED */
 
-        if (si != NULL
-            && ossl_cmp_pkisi_get_status(si) != OSSL_CMP_PKISTATUS_accepted) {
+        if (si != NULL && ossl_cmp_pkisi_get_status(si)
+            != OSSL_CMP_PKISTATUS_accepted) {
             int pki_status = ossl_cmp_pkisi_get_status(si);
             const char *str = ossl_cmp_PKIStatus_to_string(pki_status);
 
@@ -447,7 +446,7 @@ OSSL_CMP_MSG *OSSL_CMP_SRV_process_request(OSSL_CMP_SRV_CTX *srv_ctx,
     ASN1_OCTET_STRING *backup_secret;
     OSSL_CMP_PKIHEADER *hdr;
     int req_type, rsp_type;
-    int req_verified = 0;
+    int res;
     OSSL_CMP_MSG *rsp = NULL;
 
     if (srv_ctx == NULL || srv_ctx->ctx == NULL
@@ -505,12 +504,12 @@ OSSL_CMP_MSG *OSSL_CMP_SRV_process_request(OSSL_CMP_SRV_CTX *srv_ctx,
         }
     }
 
-    req_verified = ossl_cmp_msg_check_update(ctx, req, unprotected_exception,
-                                             srv_ctx->acceptUnprotected);
+    res = ossl_cmp_msg_check_update(ctx, req, unprotected_exception,
+                                    srv_ctx->acceptUnprotected);
     if (ctx->secretValue != NULL && ctx->pkey != NULL
             && ossl_cmp_hdr_get_protection_nid(hdr) != NID_id_PasswordBasedMAC)
         ctx->secretValue = NULL; /* use MSG_SIG_ALG when protecting rsp */
-    if (!req_verified)
+    if (!res)
         goto err;
 
     switch (req_type) {
@@ -554,7 +553,6 @@ OSSL_CMP_MSG *OSSL_CMP_SRV_process_request(OSSL_CMP_SRV_CTX *srv_ctx,
             rsp = process_pollReq(srv_ctx, req);
         break;
     default:
-        /* Other request message types are not supported */
         ERR_raise(ERR_LIB_CMP, CMP_R_UNEXPECTED_PKIBODY);
         break;
     }
@@ -566,18 +564,11 @@ OSSL_CMP_MSG *OSSL_CMP_SRV_process_request(OSSL_CMP_SRV_CTX *srv_ctx,
         int flags = 0;
         unsigned long err = ERR_peek_error_data(&data, &flags);
         int fail_info = 1 << OSSL_CMP_PKIFAILUREINFO_badRequest;
-        /* fail_info is not very specific */
         OSSL_CMP_PKISI *si = NULL;
 
-        if (!req_verified) {
-            /*
-             * Above ossl_cmp_msg_check_update() was not successfully executed,
-             * which normally would set ctx->transactionID and ctx->recipNonce.
-             * So anyway try to provide the right transactionID and recipNonce,
-             * while ignoring any (extra) error in next two function calls.
-             */
-            if (ctx->transactionID == NULL)
-                (void)OSSL_CMP_CTX_set1_transactionID(ctx, hdr->transactionID);
+        if (ctx->transactionID == NULL) {
+            /* ignore any (extra) error in next two function calls: */
+            (void)OSSL_CMP_CTX_set1_transactionID(ctx, hdr->transactionID);
             (void)ossl_cmp_ctx_set1_recipNonce(ctx, hdr->senderNonce);
         }
 
@@ -602,8 +593,8 @@ OSSL_CMP_MSG *OSSL_CMP_SRV_process_request(OSSL_CMP_SRV_CTX *srv_ctx,
     else
         ossl_cmp_log(ERR, ctx, "cannot send proper CMP response");
 
-    /* determine whether to keep the transaction open or not */
-    ctx->status = OSSL_CMP_PKISTATUS_trans;
+    /* possibly close the transaction */
+    ctx->status = -2; /* this indicates transaction is open */
     switch (rsp_type) {
     case OSSL_CMP_PKIBODY_IP:
     case OSSL_CMP_PKIBODY_CP:
@@ -616,11 +607,9 @@ OSSL_CMP_MSG *OSSL_CMP_SRV_process_request(OSSL_CMP_SRV_CTX *srv_ctx,
     case OSSL_CMP_PKIBODY_PKICONF:
     case OSSL_CMP_PKIBODY_GENP:
     case OSSL_CMP_PKIBODY_ERROR:
-        /* Other terminating response message types are not supported */
-        /* Prepare for next transaction, ignoring any errors here: */
         (void)OSSL_CMP_CTX_set1_transactionID(ctx, NULL);
         (void)OSSL_CMP_CTX_set1_senderNonce(ctx, NULL);
-        ctx->status = OSSL_CMP_PKISTATUS_unspecified; /* transaction closed */
+        ctx->status = -1; /* transaction closed */
 
     default: /* not closing transaction in other cases */
         break;

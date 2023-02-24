@@ -343,7 +343,8 @@ static int derive_secret_key_and_iv(SSL_CONNECTION *s, int sending,
                                     size_t labellen, unsigned char *secret,
                                     unsigned char *key, size_t *keylen,
                                     unsigned char *iv, size_t *ivlen,
-                                    size_t *taglen)
+                                    size_t *taglen,
+                                    EVP_CIPHER_CTX *ciph_ctx)
 {
     int hashleni = EVP_MD_get_size(md);
     size_t hashlen;
@@ -408,6 +409,17 @@ static int derive_secret_key_and_iv(SSL_CONNECTION *s, int sending,
         return 0;
     }
 
+    if (sending) {
+        if (EVP_CipherInit_ex(ciph_ctx, ciph, NULL, NULL, NULL, sending) <= 0
+            || EVP_CIPHER_CTX_ctrl(ciph_ctx, EVP_CTRL_AEAD_SET_IVLEN, *ivlen, NULL) <= 0
+            || (mode == EVP_CIPH_CCM_MODE
+                && EVP_CIPHER_CTX_ctrl(ciph_ctx, EVP_CTRL_AEAD_SET_TAG, *taglen, NULL) <= 0)
+            || EVP_CipherInit_ex(ciph_ctx, NULL, NULL, key, NULL, -1) <= 0) {
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_EVP_LIB);
+            return 0;
+        }
+    }
+
     return 1;
 }
 
@@ -429,7 +441,7 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
     static const unsigned char resumption_master_secret[] = "\x72\x65\x73\x20\x6D\x61\x73\x74\x65\x72";
     /* ASCII: "e exp master", in hex for EBCDIC compatibility */
     static const unsigned char early_exporter_master_secret[] = "\x65\x20\x65\x78\x70\x20\x6D\x61\x73\x74\x65\x72";
-    unsigned char iv[EVP_MAX_IV_LENGTH];
+    unsigned char *iv;
     unsigned char key[EVP_MAX_KEY_LENGTH];
     unsigned char secret[EVP_MAX_MD_SIZE];
     unsigned char hashval[EVP_MAX_MD_SIZE];
@@ -437,6 +449,7 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
     unsigned char *insecret;
     unsigned char *finsecret = NULL;
     const char *log_label = NULL;
+    EVP_CIPHER_CTX *ciph_ctx = NULL;
     size_t finsecretlen = 0;
     const unsigned char *label;
     size_t labellen, hashlen = 0;
@@ -448,6 +461,30 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
     int level;
     int direction = (which & SSL3_CC_READ) != 0 ? OSSL_RECORD_DIRECTION_READ
                                                 : OSSL_RECORD_DIRECTION_WRITE;
+#if !defined(OPENSSL_NO_KTLS) && defined(OPENSSL_KTLS_TLS13)
+    ktls_crypto_info_t crypto_info;
+    void *rl_sequence;
+    BIO *bio;
+#endif
+
+    if (which & SSL3_CC_READ) {
+        iv = s->read_iv;
+    } else {
+        s->statem.enc_write_state = ENC_WRITE_STATE_INVALID;
+        if (s->enc_write_ctx != NULL) {
+            EVP_CIPHER_CTX_reset(s->enc_write_ctx);
+        } else {
+            s->enc_write_ctx = EVP_CIPHER_CTX_new();
+            if (s->enc_write_ctx == NULL) {
+                SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
+                goto err;
+            }
+        }
+        ciph_ctx = s->enc_write_ctx;
+        iv = s->write_iv;
+
+        RECORD_LAYER_reset_write_sequence(&s->rlayer);
+    }
 
     if (((which & SSL3_CC_CLIENT) && (which & SSL3_CC_WRITE))
             || ((which & SSL3_CC_SERVER) && (which & SSL3_CC_READ))) {
@@ -497,7 +534,7 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
              */
             mdctx = EVP_MD_CTX_new();
             if (mdctx == NULL) {
-                SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_EVP_LIB);
+                SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
 
@@ -626,7 +663,7 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
 
     if (!derive_secret_key_and_iv(s, which & SSL3_CC_WRITE, md, cipher,
                                   insecret, hash, label, labellen, secret, key,
-                                  &keylen, iv, &ivlen, &taglen)) {
+                                  &keylen, iv, &ivlen, &taglen, ciph_ctx)) {
         /* SSLfatal() already called */
         goto err;
     }
@@ -663,12 +700,10 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
         goto err;
     }
 
-    if ((which & SSL3_CC_WRITE) != 0) {
-        if (!s->server && label == client_early_traffic)
-            s->rlayer.wrlmethod->set_plain_alerts(s->rlayer.wrl, 1);
-        else
-            s->rlayer.wrlmethod->set_plain_alerts(s->rlayer.wrl, 0);
-    }
+    if (!s->server && label == client_early_traffic)
+        s->statem.enc_write_state = ENC_WRITE_STATE_WRITE_PLAIN_ALERTS;
+    else
+        s->statem.enc_write_state = ENC_WRITE_STATE_VALID;
 
     level = (which & SSL3_CC_EARLY) != 0
             ? OSSL_RECORD_PROTECTION_LEVEL_EARLY
@@ -678,13 +713,65 @@ int tls13_change_cipher_state(SSL_CONNECTION *s, int which)
 
     if (!ssl_set_new_record_layer(s, s->version,
                                   direction,
-                                  level, secret, hashlen, key, keylen, iv,
-                                  ivlen, NULL, 0, cipher, taglen, NID_undef,
-                                  NULL, NULL, md)) {
+                                  level, key, keylen, iv, ivlen, NULL, 0,
+                                  cipher, taglen, NID_undef, NULL, NULL)) {
         /* SSLfatal already called */
         goto err;
     }
 
+    if ((which & SSL3_CC_READ) != 0) {
+        /* TODO(RECLAYER): Remove me when write rlayer done */
+        goto skip_ktls;
+    }
+
+#ifndef OPENSSL_NO_KTLS
+# if defined(OPENSSL_KTLS_TLS13)
+    if (!(which & SSL3_CC_APPLICATION)
+            || (s->options & SSL_OP_ENABLE_KTLS) == 0)
+        goto skip_ktls;
+
+    /* ktls supports only the maximum fragment size */
+    if (ssl_get_max_send_fragment(s) != SSL3_RT_MAX_PLAIN_LENGTH)
+        goto skip_ktls;
+
+    /* ktls does not support record padding */
+    if (s->rlayer.record_padding_cb != NULL || s->rlayer.block_padding > 0)
+        goto skip_ktls;
+
+    /* check that cipher is supported */
+    if (!ktls_check_supported_cipher(s, cipher, NULL, taglen))
+        goto skip_ktls;
+
+    if (which & SSL3_CC_WRITE)
+        bio = s->wbio;
+    else
+        bio = s->rbio;
+
+    if (!ossl_assert(bio != NULL)) {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+        goto err;
+    }
+
+    /* All future data will get encrypted by ktls. Flush the BIO or skip ktls */
+    if (which & SSL3_CC_WRITE) {
+        if (BIO_flush(bio) <= 0)
+            goto skip_ktls;
+    }
+
+    /* configure kernel crypto structure */
+    /*
+     * If we get here we are only doing the write side. The read side goes
+     * through the new record layer code.
+     */
+    rl_sequence = RECORD_LAYER_get_write_sequence(&s->rlayer);
+
+    if (!ktls_configure_crypto(sctx->libctx, s->version, cipher, NULL,
+                               rl_sequence, &crypto_info, which & SSL3_CC_WRITE,
+                               iv, ivlen, key, keylen, NULL, 0))
+        goto skip_ktls;
+# endif
+#endif
+skip_ktls:
     ret = 1;
  err:
     if ((which & SSL3_CC_EARLY) != 0) {
@@ -703,14 +790,14 @@ int tls13_update_key(SSL_CONNECTION *s, int sending)
     const EVP_MD *md = ssl_handshake_md(s);
     size_t hashlen;
     unsigned char key[EVP_MAX_KEY_LENGTH];
-    unsigned char *insecret;
+    unsigned char *insecret, *iv;
     unsigned char secret[EVP_MAX_MD_SIZE];
     char *log_label;
+    EVP_CIPHER_CTX *ciph_ctx;
     size_t keylen, ivlen, taglen;
     int ret = 0, l;
     int direction = sending ? OSSL_RECORD_DIRECTION_WRITE
                             : OSSL_RECORD_DIRECTION_READ;
-    unsigned char iv[EVP_MAX_IV_LENGTH];
 
     if ((l = EVP_MD_get_size(md)) <= 0) {
         SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
@@ -723,11 +810,21 @@ int tls13_update_key(SSL_CONNECTION *s, int sending)
     else
         insecret = s->client_app_traffic_secret;
 
+    if (sending) {
+        s->statem.enc_write_state = ENC_WRITE_STATE_INVALID;
+        iv = s->write_iv;
+        ciph_ctx = s->enc_write_ctx;
+        RECORD_LAYER_reset_write_sequence(&s->rlayer);
+    } else {
+        iv = s->read_iv;
+        ciph_ctx = s->enc_read_ctx;
+    }
+
     if (!derive_secret_key_and_iv(s, sending, md,
                                   s->s3.tmp.new_sym_enc, insecret, NULL,
                                   application_traffic,
                                   sizeof(application_traffic) - 1, secret, key,
-                                  &keylen, iv, &ivlen, &taglen)) {
+                                  &keylen, iv, &ivlen, &taglen, ciph_ctx)) {
         /* SSLfatal() already called */
         goto err;
     }
@@ -737,9 +834,9 @@ int tls13_update_key(SSL_CONNECTION *s, int sending)
     if (!ssl_set_new_record_layer(s, s->version,
                             direction,
                             OSSL_RECORD_PROTECTION_LEVEL_APPLICATION,
-                            insecret, hashlen, key, keylen, iv, ivlen, NULL, 0,
+                            key, keylen, iv, ivlen, NULL, 0,
                             s->s3.tmp.new_sym_enc, taglen, NID_undef, NULL,
-                            NULL, md)) {
+                            NULL)) {
         /* SSLfatal already called */
         goto err;
     }
@@ -750,6 +847,8 @@ int tls13_update_key(SSL_CONNECTION *s, int sending)
         /* SSLfatal() already called */
         goto err;
     }
+
+    s->statem.enc_write_state = ENC_WRITE_STATE_VALID;
     ret = 1;
  err:
     OPENSSL_cleanse(key, sizeof(key));

@@ -19,6 +19,7 @@
 # include "crypto/evp.h"
 #endif
 #include "prov/provider_util.h"
+#include "internal/nelem.h"
 
 void ossl_prov_cipher_reset(PROV_CIPHER *pc)
 {
@@ -356,8 +357,10 @@ int ossl_prov_memdup(const void *src, size_t src_len,
                      unsigned char **dest, size_t *dest_len)
 {
     if (src != NULL) {
-        if ((*dest = OPENSSL_memdup(src, src_len)) == NULL)
+        if ((*dest = OPENSSL_memdup(src, src_len)) == NULL) {
+            ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
         *dest_len = src_len;
     } else {
         *dest = NULL;

@@ -18,8 +18,8 @@ default_keyfile 	= privkey.pem
 # Don't prompt for fields: use those in section directly
 prompt			= no
 distinguished_name	= req_distinguished_name
-x509_extensions         = v3_ca # The extensions to add to the self signed cert
-string_mask             = utf8only
+x509_extensions	= v3_ca	# The extensions to add to the self signed cert
+string_mask = utf8only
 
 # req_extensions = v3_req # The extensions to add to a certificate request
 
@@ -32,39 +32,46 @@ commonName			= $ENV::CN
 
 [ usr_cert ]
 
-# These extensions are added when 'ca' signs a request for a normal end-entity
-# certificate with key usage restrictions compatible with RSA keys
+# These extensions are added when 'ca' signs a request for an end entity
+# certificate
 
-basicConstraints = CA:FALSE
-keyUsage = critical, nonRepudiation, digitalSignature, keyEncipherment
+basicConstraints=critical, CA:FALSE
+keyUsage=critical, nonRepudiation, digitalSignature, keyEncipherment
 
-# Following SKID and AKID settings are meanwhile by default in all certificates.
-# See doc/man5/x509v3_config.pod for details.
-
-# subjectKeyIdentifier   = hash
-# authorityKeyIdentifier = keyid, issuer
+# PKIX recommendations harmless if included in all certificates.
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid
 
 [ dh_cert ]
 
-# These extensions are added when 'ca' signs a request for an end-entity
-# DH certificate, for which only key agreement makes sense
+# These extensions are added when 'ca' signs a request for an end entity
+# DH certificate
 
-basicConstraints = CA:FALSE
-keyUsage = critical, keyAgreement
+basicConstraints=critical, CA:FALSE
+keyUsage=critical, keyAgreement
+
+# PKIX recommendations harmless if included in all certificates.
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid
 
 [ codesign_cert ]
 
 # These extensions are added when 'ca' signs a request for a code-signing
-# end-entity certificate compatible with RSA and ECC keys
+# end-entity certificate
 
-basicConstraints = CA:FALSE
-keyUsage = critical, digitalSignature
-extendedKeyUsage = codeSigning
+basicConstraints=CA:FALSE
+keyUsage=critical, digitalSignature
+extendedKeyUsage=codeSigning
 
 [ v3_ca ]
 
-# Extensions for a typical CA as required by RFC 5280 etc.
-# SKID and AKID are by default set according to PKIX recommendation.
 
-basicConstraints = critical, CA:true
+# Extensions for a typical CA
+
+# PKIX recommendation.
+
+subjectKeyIdentifier=hash
+authorityKeyIdentifier=keyid:always
+basicConstraints = critical,CA:true
 keyUsage = critical, cRLSign, keyCertSign
+

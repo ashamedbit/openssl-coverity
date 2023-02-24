@@ -23,18 +23,15 @@ supports the following.
 
 =item "n" (B<OSSL_PKEY_PARAM_RSA_N>) <unsigned integer>
 
-The RSA modulus "n" value.
+The RSA "n" value.
 
 =item "e" (B<OSSL_PKEY_PARAM_RSA_E>) <unsigned integer>
 
-The RSA public exponent "e" value.
-This value must always be set when creating a raw key using L<EVP_PKEY_fromdata(3)>.
-Note that when a decryption operation is performed, that this value is used for
-blinding purposes to prevent timing attacks.
+The RSA "e" value.
 
 =item "d" (B<OSSL_PKEY_PARAM_RSA_D>) <unsigned integer>
 
-The RSA private exponent "d" value.
+The RSA "d" value.
 
 =item "rsa-factor1" (B<OSSL_PKEY_PARAM_RSA_FACTOR1>) <unsigned integer>
 
@@ -189,7 +186,7 @@ both return 1 unconditionally.
 
 For RSA keys, L<EVP_PKEY_public_check(3)> conforms to the SP800-56Br1 I<public key
 check> when the OpenSSL FIPS provider is used. The OpenSSL default provider
-performs similar tests but relaxes the keysize restrictions for backwards
+performs similiar tests but relaxes the keysize restrictions for backwards
 compatibility.
 
 For RSA keys, L<EVP_PKEY_public_check_quick(3)> is the same as

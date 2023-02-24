@@ -199,7 +199,7 @@ static int i2r_ADMISSION_SYNTAX(const struct v3_ext_method *method, void *in,
     return 1;
 
 err:
-    return 0;
+    return -1;
 }
 
 const ASN1_OBJECT *NAMING_AUTHORITY_get0_authorityId(const NAMING_AUTHORITY *n)

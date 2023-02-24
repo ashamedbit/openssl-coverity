@@ -19,13 +19,6 @@
 #include <openssl/rand.h>
 #include "crypto/bn.h"
 #include "ec_local.h"
-#include "internal/deterministic_nonce.h"
-
-static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in,
-                            BIGNUM **kinvp, BIGNUM **rp,
-                            const unsigned char *dgst, int dlen,
-                            unsigned int nonce_type, const char *digestname,
-                            OSSL_LIB_CTX *libctx, const char *propq);
 
 int ossl_ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in, BIGNUM **kinvp,
                           BIGNUM **rp)
@@ -78,39 +71,9 @@ int ossl_ecdsa_sign(int type, const unsigned char *dgst, int dlen,
     return 1;
 }
 
-int ossl_ecdsa_deterministic_sign(const unsigned char *dgst, int dlen,
-                                  unsigned char *sig, unsigned int *siglen,
-                                  EC_KEY *eckey, unsigned int nonce_type,
-                                  const char *digestname,
-                                  OSSL_LIB_CTX *libctx, const char *propq)
-{
-    ECDSA_SIG *s;
-    BIGNUM *kinv = NULL, *r = NULL;
-    int ret = 0;
-
-    *siglen = 0;
-    if (!ecdsa_sign_setup(eckey, NULL, &kinv, &r, dgst, dlen,
-                          nonce_type, digestname, libctx, propq))
-        return 0;
-
-    s = ECDSA_do_sign_ex(dgst, dlen, kinv, r, eckey);
-    if (s == NULL)
-        goto end;
-
-    *siglen = i2d_ECDSA_SIG(s, &sig);
-    ECDSA_SIG_free(s);
-    ret = 1;
-end:
-    BN_clear_free(kinv);
-    BN_clear_free(r);
-    return ret;
-}
-
 static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in,
                             BIGNUM **kinvp, BIGNUM **rp,
-                            const unsigned char *dgst, int dlen,
-                            unsigned int nonce_type, const char *digestname,
-                            OSSL_LIB_CTX *libctx, const char *propq)
+                            const unsigned char *dgst, int dlen)
 {
     BN_CTX *ctx = NULL;
     BIGNUM *k = NULL, *r = NULL, *X = NULL;
@@ -137,7 +100,7 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in,
 
     if ((ctx = ctx_in) == NULL) {
         if ((ctx = BN_CTX_new_ex(eckey->libctx)) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             return 0;
         }
     }
@@ -146,7 +109,7 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in,
     r = BN_new();               /* this value is later returned in *rp */
     X = BN_new();
     if (k == NULL || r == NULL || X == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     if ((tmp_point = EC_POINT_new(group)) == NULL) {
@@ -163,29 +126,19 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in,
         goto err;
 
     do {
-        /* get random or determinstic value of k */
+        /* get random k */
         do {
-            int res = 0;
-
             if (dgst != NULL) {
-                if (nonce_type == 1) {
-#ifndef FIPS_MODULE
-                    res = ossl_gen_deterministic_nonce_rfc6979(k, order,
-                                                               priv_key,
-                                                               dgst, dlen,
-                                                               digestname,
-                                                               libctx, propq);
-#endif
-                } else {
-                    res = BN_generate_dsa_nonce(k, order, priv_key, dgst, dlen,
-                                                ctx);
+                if (!BN_generate_dsa_nonce(k, order, priv_key,
+                                           dgst, dlen, ctx)) {
+                    ERR_raise(ERR_LIB_EC, EC_R_RANDOM_NUMBER_GENERATION_FAILED);
+                    goto err;
                 }
             } else {
-                res = BN_priv_rand_range_ex(k, order, 0, ctx);
-            }
-            if (!res) {
-                ERR_raise(ERR_LIB_EC, EC_R_RANDOM_NUMBER_GENERATION_FAILED);
-                goto err;
+                if (!BN_priv_rand_range_ex(k, order, 0, ctx)) {
+                    ERR_raise(ERR_LIB_EC, EC_R_RANDOM_NUMBER_GENERATION_FAILED);
+                    goto err;
+                }
             }
         } while (BN_is_zero(k));
 
@@ -234,8 +187,7 @@ static int ecdsa_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in,
 int ossl_ecdsa_simple_sign_setup(EC_KEY *eckey, BN_CTX *ctx_in, BIGNUM **kinvp,
                                  BIGNUM **rp)
 {
-    return ecdsa_sign_setup(eckey, ctx_in, kinvp, rp, NULL, 0,
-                            0, NULL, NULL, NULL);
+    return ecdsa_sign_setup(eckey, ctx_in, kinvp, rp, NULL, 0);
 }
 
 ECDSA_SIG *ossl_ecdsa_simple_sign_sig(const unsigned char *dgst, int dgst_len,
@@ -269,20 +221,20 @@ ECDSA_SIG *ossl_ecdsa_simple_sign_sig(const unsigned char *dgst, int dgst_len,
 
     ret = ECDSA_SIG_new();
     if (ret == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_ECDSA_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         return NULL;
     }
     ret->r = BN_new();
     ret->s = BN_new();
     if (ret->r == NULL || ret->s == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     s = ret->s;
 
     if ((ctx = BN_CTX_new_ex(eckey->libctx)) == NULL
         || (m = BN_new()) == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -304,8 +256,7 @@ ECDSA_SIG *ossl_ecdsa_simple_sign_sig(const unsigned char *dgst, int dgst_len,
     }
     do {
         if (in_kinv == NULL || in_r == NULL) {
-            if (!ecdsa_sign_setup(eckey, ctx, &kinv, &ret->r, dgst, dgst_len,
-                                  0, NULL, NULL, NULL)) {
+            if (!ecdsa_sign_setup(eckey, ctx, &kinv, &ret->r, dgst, dgst_len)) {
                 ERR_raise(ERR_LIB_EC, ERR_R_ECDSA_LIB);
                 goto err;
             }
@@ -313,7 +264,7 @@ ECDSA_SIG *ossl_ecdsa_simple_sign_sig(const unsigned char *dgst, int dgst_len,
         } else {
             ckinv = in_kinv;
             if (BN_copy(ret->r, in_r) == NULL) {
-                ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+                ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
         }
@@ -427,7 +378,7 @@ int ossl_ecdsa_simple_verify_sig(const unsigned char *dgst, int dgst_len,
 
     ctx = BN_CTX_new_ex(eckey->libctx);
     if (ctx == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         return -1;
     }
     BN_CTX_start(ctx);
@@ -486,7 +437,7 @@ int ossl_ecdsa_simple_verify_sig(const unsigned char *dgst, int dgst_len,
     }
 
     if ((point = EC_POINT_new(group)) == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_EC_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     if (!EC_POINT_mul(group, point, u1, pub_key, u2, ctx)) {

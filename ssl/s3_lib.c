@@ -3270,6 +3270,8 @@ static int sslcon_undefined_function_1(SSL_CONNECTION *sc, unsigned char *r,
 }
 
 const SSL3_ENC_METHOD SSLv3_enc_data = {
+    ssl3_enc,
+    n_ssl3_mac,
     ssl3_setup_key_block,
     ssl3_generate_master_secret,
     ssl3_change_cipher_state,
@@ -3366,7 +3368,6 @@ void ssl3_free(SSL *s)
     OPENSSL_clear_free(sc->s3.tmp.pms, sc->s3.tmp.pmslen);
     OPENSSL_free(sc->s3.tmp.peer_sigalgs);
     OPENSSL_free(sc->s3.tmp.peer_cert_sigalgs);
-    OPENSSL_free(sc->s3.tmp.valid_flags);
     ssl3_free_digest_list(sc);
     OPENSSL_free(sc->s3.alpn_selected);
     OPENSSL_free(sc->s3.alpn_proposed);
@@ -3391,7 +3392,6 @@ int ssl3_clear(SSL *s)
     OPENSSL_clear_free(sc->s3.tmp.pms, sc->s3.tmp.pmslen);
     OPENSSL_free(sc->s3.tmp.peer_sigalgs);
     OPENSSL_free(sc->s3.tmp.peer_cert_sigalgs);
-    OPENSSL_free(sc->s3.tmp.valid_flags);
 
     EVP_PKEY_free(sc->s3.tmp.pkey);
     EVP_PKEY_free(sc->s3.peer_tmp);
@@ -3466,7 +3466,7 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
             }
             pkdh = ssl_dh_to_pkey(parg);
             if (pkdh == NULL) {
-                ERR_raise(ERR_LIB_SSL, ERR_R_DH_LIB);
+                ERR_raise(ERR_LIB_SSL, ERR_R_MALLOC_FAILURE);
                 return 0;
             }
             if (!SSL_set0_tmp_dh_pkey(s, pkdh)) {
@@ -3632,8 +3632,11 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
                 int *cptr = parg;
 
                 for (i = 0; i < clistlen; i++) {
+                    uint16_t cid = SSL_CONNECTION_IS_TLS13(sc)
+                                   ? ssl_group_id_tls13_to_internal(clist[i])
+                                   : clist[i];
                     const TLS_GROUP_INFO *cinf
-                        = tls1_group_id_lookup(s->ctx, clist[i]);
+                        = tls1_group_id_lookup(s->ctx, cid);
 
                     if (cinf != NULL)
                         cptr[i] = tls1_group_id2nid(cinf->group_id, 1);
@@ -3811,7 +3814,7 @@ long ssl3_ctx_ctrl(SSL_CTX *ctx, int cmd, long larg, void *parg)
             }
             pkdh = ssl_dh_to_pkey(parg);
             if (pkdh == NULL) {
-                ERR_raise(ERR_LIB_SSL, ERR_R_DH_LIB);
+                ERR_raise(ERR_LIB_SSL, ERR_R_MALLOC_FAILURE);
                 return 0;
             }
             if (!SSL_CTX_set0_tmp_dh_pkey(ctx, pkdh)) {
@@ -3980,12 +3983,12 @@ long ssl3_ctx_ctrl(SSL_CTX *ctx, int cmd, long larg, void *parg)
     case SSL_CTRL_EXTRA_CHAIN_CERT:
         if (ctx->extra_certs == NULL) {
             if ((ctx->extra_certs = sk_X509_new_null()) == NULL) {
-                ERR_raise(ERR_LIB_SSL, ERR_R_CRYPTO_LIB);
+                ERR_raise(ERR_LIB_SSL, ERR_R_MALLOC_FAILURE);
                 return 0;
             }
         }
         if (!sk_X509_push(ctx->extra_certs, (X509 *)parg)) {
-            ERR_raise(ERR_LIB_SSL, ERR_R_CRYPTO_LIB);
+            ERR_raise(ERR_LIB_SSL, ERR_R_MALLOC_FAILURE);
             return 0;
         }
         break;
@@ -4246,7 +4249,7 @@ const SSL_CIPHER *ssl3_choose_cipher(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *cl
 
     if (SSL_CONNECTION_IS_TLS13(s)) {
 #ifndef OPENSSL_NO_PSK
-        size_t j;
+        int j;
 
         /*
          * If we allow "old" style PSK callbacks, and we have no certificate (so
@@ -4256,8 +4259,8 @@ const SSL_CIPHER *ssl3_choose_cipher(SSL_CONNECTION *s, STACK_OF(SSL_CIPHER) *cl
          * that.
          */
         if (s->psk_server_callback != NULL) {
-            for (j = 0; j < s->ssl_pkey_num && !ssl_has_cert(s, j); j++);
-            if (j == s->ssl_pkey_num) {
+            for (j = 0; j < SSL_PKEY_NUM && !ssl_has_cert(s, j); j++);
+            if (j == SSL_PKEY_NUM) {
                 /* There are no certificates */
                 prefer_sha256 = 1;
             }
@@ -4445,11 +4448,11 @@ int ssl3_shutdown(SSL *s)
         ssl3_send_alert(sc, SSL3_AL_WARNING, SSL_AD_CLOSE_NOTIFY);
         /*
          * our shutdown alert has been sent now, and if it still needs to be
-         * written, s->s3.alert_dispatch will be > 0
+         * written, s->s3.alert_dispatch will be true
          */
-        if (sc->s3.alert_dispatch > 0)
+        if (sc->s3.alert_dispatch)
             return -1;        /* return WANT_WRITE */
-    } else if (sc->s3.alert_dispatch > 0) {
+    } else if (sc->s3.alert_dispatch) {
         /* resend it if not sent */
         ret = s->method->ssl_dispatch_alert(s);
         if (ret == -1) {
@@ -4471,8 +4474,8 @@ int ssl3_shutdown(SSL *s)
         }
     }
 
-    if ((sc->shutdown == (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN))
-            && sc->s3.alert_dispatch == SSL_ALERT_DISPATCH_NONE)
+    if ((sc->shutdown == (SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN)) &&
+        !sc->s3.alert_dispatch)
         return 1;
     else
         return 0;
@@ -4765,7 +4768,7 @@ EVP_PKEY *ssl_generate_pkey_group(SSL_CONNECTION *s, uint16_t id)
                                       sctx->propq);
 
     if (pctx == NULL) {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_EVP_LIB);
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     if (EVP_PKEY_keygen_init(pctx) <= 0) {
@@ -4875,7 +4878,7 @@ int ssl_derive(SSL_CONNECTION *s, EVP_PKEY *privkey, EVP_PKEY *pubkey, int gense
 
     pms = OPENSSL_malloc(pmslen);
     if (pms == NULL) {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -4927,7 +4930,7 @@ int ssl_decapsulate(SSL_CONNECTION *s, EVP_PKEY *privkey,
 
     pms = OPENSSL_malloc(pmslen);
     if (pms == NULL) {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -4980,7 +4983,7 @@ int ssl_encapsulate(SSL_CONNECTION *s, EVP_PKEY *pubkey,
     pms = OPENSSL_malloc(pmslen);
     ct = OPENSSL_malloc(ctlen);
     if (pms == NULL || ct == NULL) {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 

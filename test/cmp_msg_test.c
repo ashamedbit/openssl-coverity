@@ -338,6 +338,7 @@ static int test_cmp_create_error_msg(void)
     return result;
 }
 
+
 static int test_cmp_create_pollreq(void)
 {
     SETUP_TEST_FIXTURE(CMP_MSG_TEST_FIXTURE, set_up);
@@ -422,6 +423,7 @@ static int test_cmp_create_certrep(void)
     EXECUTE_TEST(execute_certrep_create, tear_down);
     return result;
 }
+
 
 static int execute_rp_create(CMP_MSG_TEST_FIXTURE *fixture)
 {

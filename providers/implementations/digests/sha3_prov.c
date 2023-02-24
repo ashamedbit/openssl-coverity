@@ -182,8 +182,6 @@ static int s390x_keccakc_final(unsigned char *md, void *vctx, int padding)
     KECCAK1600_CTX *ctx = vctx;
     size_t bsz = ctx->block_size;
     size_t num = ctx->bufsz;
-    size_t needed = ctx->md_size;
-    static const unsigned char empty[KECCAK1600_WIDTH / 8] = {0};
 
     if (!ossl_prov_is_running())
         return 0;
@@ -193,14 +191,7 @@ static int s390x_keccakc_final(unsigned char *md, void *vctx, int padding)
     ctx->buf[num] = padding;
     ctx->buf[bsz - 1] |= 0x80;
     s390x_kimd(ctx->buf, bsz, ctx->pad, ctx->A);
-    while (needed > bsz) {
-        memcpy(md, ctx->A, bsz);
-        needed -= bsz;
-        md += bsz;
-        s390x_kimd(empty, bsz, ctx->pad, ctx->A);
-    }
-    memcpy(md, ctx->A, needed);
-
+    memcpy(md, ctx->A, ctx->md_size);
     return 1;
 }
 

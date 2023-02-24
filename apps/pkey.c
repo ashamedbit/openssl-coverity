@@ -248,7 +248,7 @@ int pkey_main(int argc, char **argv)
             goto end;
         }
 
-        if (check && !pubin)
+        if (check)
             r = EVP_PKEY_check(ctx);
         else
             r = EVP_PKEY_public_check(ctx);

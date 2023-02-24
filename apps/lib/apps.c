@@ -301,7 +301,6 @@ static char *app_get_pass(const char *arg, int keepbio)
             pwdbio = BIO_push(btmp, pwdbio);
 #endif
         } else if (strcmp(arg, "stdin") == 0) {
-            unbuffer(stdin);
             pwdbio = dup_bio_in(FORMAT_TEXT);
             if (pwdbio == NULL) {
                 BIO_printf(bio_err, "Can't open BIO for stdin\n");
@@ -1013,7 +1012,7 @@ int load_key_certs_crls(const char *uri, int format, int maybe_stdin,
              * so if the caller asked for a public key, and we got a private
              * key, we can still pass it back.
              */
-            /* fall through */
+            /* fall thru */
         case OSSL_STORE_INFO_PUBKEY:
             if (ppubkey != NULL) {
                 ok = (*ppubkey = OSSL_STORE_INFO_get1_PUBKEY(info)) != NULL;
@@ -1071,9 +1070,7 @@ int load_key_certs_crls(const char *uri, int format, int maybe_stdin,
     if (failed == NULL) {
         failed = FAIL_NAME;
         if (failed != NULL)
-            BIO_printf(bio_err, "Could not find");
-    } else {
-        BIO_printf(bio_err, "Could not read");
+            BIO_printf(bio_err, "Could not read");
     }
     if (failed != NULL) {
         unsigned long err = ERR_peek_last_error();
@@ -2291,14 +2288,16 @@ int cert_matches_key(const X509 *cert, const EVP_PKEY *pkey)
 }
 
 /* Ensure RFC 5280 compliance, adapt keyIDs as needed, and sign the cert info */
-int do_X509_sign(X509 *cert, int force_v1, EVP_PKEY *pkey, const char *md,
+int do_X509_sign(X509 *cert, EVP_PKEY *pkey, const char *md,
                  STACK_OF(OPENSSL_STRING) *sigopts, X509V3_CTX *ext_ctx)
 {
+    const STACK_OF(X509_EXTENSION) *exts = X509_get0_extensions(cert);
     EVP_MD_CTX *mctx = EVP_MD_CTX_new();
     int self_sign;
     int rv = 0;
 
-    if (!force_v1) {
+    if (sk_X509_EXTENSION_num(exts /* may be NULL */) > 0) {
+        /* Prevent X509_V_ERR_EXTENSIONS_REQUIRE_VERSION_3 */
         if (!X509_set_version(cert, X509_VERSION_3))
             goto end;
 
@@ -2973,9 +2972,6 @@ BIO *dup_bio_out(int format)
                         BIO_NOCLOSE | (FMT_istext(format) ? BIO_FP_TEXT : 0));
     void *prefix = NULL;
 
-    if (b == NULL)
-        return NULL;
-
 #ifdef OPENSSL_SYS_VMS
     if (FMT_istext(format))
         b = BIO_push(BIO_new(BIO_f_linebuffer()), b);
@@ -2996,7 +2992,7 @@ BIO *dup_bio_err(int format)
                         BIO_NOCLOSE | (FMT_istext(format) ? BIO_FP_TEXT : 0));
 
 #ifdef OPENSSL_SYS_VMS
-    if (b != NULL && FMT_istext(format))
+    if (FMT_istext(format))
         b = BIO_push(BIO_new(BIO_f_linebuffer()), b);
 #endif
     return b;
@@ -3406,6 +3402,14 @@ int opt_legacy_okay(void)
 {
     int provider_options = opt_provider_option_given();
     int libctx = app_get0_libctx() != NULL || app_get0_propq() != NULL;
+#ifndef OPENSSL_NO_ENGINE
+    ENGINE *e = ENGINE_get_first();
+
+    if (e != NULL) {
+        ENGINE_free(e);
+        return 1;
+    }
+#endif
     /*
      * Having a provider option specified or a custom library context or
      * property query, is a sure sign we're not using legacy.

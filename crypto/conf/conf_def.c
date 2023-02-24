@@ -233,11 +233,13 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
     }
 
     section = OPENSSL_strdup("default");
-    if (section == NULL)
+    if (section == NULL) {
+        ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
 
     if (_CONF_new_data(conf) == 0) {
-        ERR_raise(ERR_LIB_CONF, ERR_R_CONF_LIB);
+        ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -294,7 +296,7 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
             }
 #endif
             /* no more files in directory, continue with processing parent */
-            if ((parent = sk_BIO_pop(biosk)) == NULL) {
+            if (sk_BIO_num(biosk) < 1 || (parent = sk_BIO_pop(biosk)) == NULL) {
                 /* everything processed get out of the loop */
                 break;
             } else {
@@ -423,8 +425,10 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
                         goto err;
                 } else if (strcmp(p, "includedir") == 0) {
                     OPENSSL_free(conf->includedir);
-                    if ((conf->includedir = OPENSSL_strdup(pval)) == NULL)
+                    if ((conf->includedir = OPENSSL_strdup(pval)) == NULL) {
+                        ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                         goto err;
+                    }
                 }
 
                 /*
@@ -454,6 +458,7 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
 
                     include_path = OPENSSL_malloc(newlen);
                     if (include_path == NULL) {
+                        ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                         OPENSSL_free(include);
                         goto err;
                     }
@@ -490,13 +495,13 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
                     /* push the currently processing BIO onto stack */
                     if (biosk == NULL) {
                         if ((biosk = sk_BIO_new_null()) == NULL) {
-                            ERR_raise(ERR_LIB_CONF, ERR_R_CRYPTO_LIB);
+                            ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                             BIO_free(next);
                             goto err;
                         }
                     }
                     if (!sk_BIO_push(biosk, in)) {
-                        ERR_raise(ERR_LIB_CONF, ERR_R_CRYPTO_LIB);
+                        ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                         BIO_free(next);
                         goto err;
                     }
@@ -514,12 +519,16 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
             start = eat_ws(conf, p);
             trim_ws(conf, start);
 
-            if ((v = OPENSSL_malloc(sizeof(*v))) == NULL)
+            if ((v = OPENSSL_malloc(sizeof(*v))) == NULL) {
+                ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                 goto err;
+            }
             v->name = OPENSSL_strdup(pname);
             v->value = NULL;
-            if (v->name == NULL)
+            if (v->name == NULL) {
+                ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                 goto err;
+            }
             if (!str_copy(conf, psection, &(v->value), start))
                 goto err;
 
@@ -535,7 +544,7 @@ static int def_load_bio(CONF *conf, BIO *in, long *line)
             } else
                 tv = sv;
             if (_CONF_add_string(conf, tv, v) == 0) {
-                ERR_raise(ERR_LIB_CONF, ERR_R_CONF_LIB);
+                ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
             v = NULL;
@@ -748,7 +757,7 @@ static int str_copy(CONF *conf, char *section, char **pto, char *from)
                 goto err;
             }
             if (!BUF_MEM_grow_clean(buf, newsize)) {
-                ERR_raise(ERR_LIB_CONF, ERR_R_BUF_LIB);
+                ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
             while (*p)
@@ -840,8 +849,10 @@ static BIO *get_next_file(const char *path, OPENSSL_DIR_CTX **dirctx)
 
             newlen = pathlen + namelen + 2;
             newpath = OPENSSL_zalloc(newlen);
-            if (newpath == NULL)
+            if (newpath == NULL) {
+                ERR_raise(ERR_LIB_CONF, ERR_R_MALLOC_FAILURE);
                 break;
+            }
 #ifdef OPENSSL_SYS_VMS
             /*
              * If the given path isn't clear VMS syntax,

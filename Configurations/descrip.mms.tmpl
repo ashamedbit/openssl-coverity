@@ -209,12 +209,12 @@
                @cnf_ldflags, '$(LDFLAGS)');
   our $bin_ex_libs = join('', @cnf_ex_libs, '$(EX_LIBS)');
 
-  # These are horrible hacks, but are needed because recursive inclusion of
-  # files in different directories does not work well with VMS C.  We try to
-  # help by specifying extra relative directories.  They must always be in Unix
-  # format, relative to the directory where the .c file is located.  The logic
-  # is that any inclusion, merged with one of these relative directories, will
-  # find the requested inclusion file.
+  # This is a horrible hack, but is needed because recursive inclusion of files
+  # in different directories does not work well with VMS C.  We try to help by
+  # specifying extra relative directories.  They must always be in Unix format,
+  # relative to the directory where the .c file is located.  The logic is that
+  # any inclusion, merged with one of these relative directories, will find the
+  # requested inclusion file.
   foreach (grep /\[\.crypto\.async\.arch\].*\.o$/, keys %{$unified_info{sources}}) {
       my $obj = platform->obj($_);
       push @{$unified_info{includes_extra}->{$obj}}, qw(../);
@@ -229,17 +229,11 @@
   }
   foreach (grep /\[\.ssl\].*?\.o$/, keys %{$unified_info{sources}}) {
       my $obj = platform->obj($_);
-      # Most of the files in [.ssl] include "ssl_local.h" which includes things
-      # like "record/record.h".  Adding "./" as an inclusion directory helps
-      # making this sort of header from these directories.
+      # Most of the files in [.ssl.record.methods] include "ssl_local.h"
+      # which includes things like "record/record.h".  Adding "./" as an
+      # inclusion directory helps making this sort of header from these
+      # directories.
       push @{$unified_info{includes_extra}->{$obj}}, qw(./);
-  }
-  foreach (grep /\[\.ssl\].*?ssl_lib\.o$/, keys %{$unified_info{sources}}) {
-      my $obj = platform->obj($_);
-      # Some files in [.ssl] include "quic/quic_local.h", which in turn
-      # includes "../ssl_local.h".  Adding "./quic" as an inclusion directory
-      # helps making this sort of header from these directories.
-      push @{$unified_info{includes_extra}->{$obj}}, qw(./quic);
   }
   foreach (grep /\[\.ssl\.(?:record|statem)\].*?\.o$/, keys %{$unified_info{sources}}) {
       my $obj = platform->obj($_);
@@ -261,13 +255,6 @@
   foreach (grep /\[\.test\].*?\.o$/, keys %{$unified_info{sources}}) {
       my $obj = platform->obj($_);
       push @{$unified_info{includes_extra}->{$obj}}, qw(../ssl ./helpers);
-      # Some of the sources in [.test] also include headers like
-      # "../ssl/record/methods/recmethod_local.h", which in turn might include
-      # "../../ssl_local.h", so these object files need yet another hack.
-      # We could make this specific to just the object files that are affected
-      # directly, but that would end up with more whack-a-mole of this sort, so
-      # nah, we do it broadly.
-      push @{$unified_info{includes_extra}->{$obj}}, qw(../ssl/record/methods);
   }
   foreach (grep /\[\.test\.helpers\].*?\.o$/, keys %{$unified_info{sources}}) {
       my $obj = platform->obj($_);
@@ -1013,8 +1000,7 @@ EOF
 $target : $gen0 $deps $mkdef
 	\$(PERL) $mkdef$ord_ver --type $args{intent} --ordinals $gen0 --name $ord_name "--OS" "VMS"$case_insensitive > $target
 EOF
-      } elsif (platform->isasm($args{src})
-               || platform->iscppasm($args{src})) {
+      } elsif (platform->isasm($args{src})) {
           #
           # Assembler generator
           #
@@ -1024,9 +1010,7 @@ EOF
                 dso => "$dso_cflags $dso_cppflags",
                 bin => "$bin_cflags $bin_cppflags" } -> {$args{intent}};
           my $defs = join("", map { ",".$_ } @{$args{defs}});
-          my $target = platform->isasm($args{src})
-                       ? platform->asm($args{src})
-                       : $args{src};
+          my $target = platform->asm($args{src});
 
           my $generator;
           if ($gen0 =~ /\.pl$/) {
@@ -1039,6 +1023,21 @@ EOF
           }
 
           if (defined($generator)) {
+              # If the target is named foo.S in build.info, we want to
+              # end up generating foo.s in two steps.
+              if ($args{src} =~ /\.S$/) {
+                   return <<"EOF";
+$target : $gen0 $deps
+	$generator \$\@-S
+        \@ extradefines = "$defs"
+	PIPE \$(CPP) $cppflags \$\@-S | -
+             \$(PERL) -ne "/^#(\\s*line)?\\s*[0-9]+\\s+""/ or print" > \$\@-i
+        \@ DELETE/SYMBOL/LOCAL extradefines
+        RENAME \$\@-i \$\@
+        DELETE \$\@-S;
+EOF
+              }
+              # Otherwise....
               return <<"EOF";
 $target : $gen0 $deps
         \@ extradefines = "$defs"
@@ -1353,15 +1352,14 @@ EOF
                 (map { my $x = $_ =~ /\[/ ? $_ : "[]".$_;
                        "\@ WRITE OPT_FILE \"$x" } @objs),
                 (map { my $x = ($_->{lib} =~ /\[/) ? $_->{lib} : "[]".$_->{lib};
-                       # Special hack to include the MAIN object module
-                       # explicitly, if it's known that there is one.
-                       # |incmain| is defined in the rule generation further
-                       # down, with the necessary /INCLUDE=main option unless
-                       # the program has been determined to have a main function
-                       # already.
-                       $_->{attrs}->{has_main}
-                       ? "\@ WRITE OPT_FILE \"$x/LIB''incmain'"
-                       : "\@ WRITE OPT_FILE \"$x/LIB" }
+                       # Special hack to include the MAIN object
+                       # module explicitly.  This will only be done
+                       # if there isn't a 'main' in the program's
+                       # object modules already.
+                       my $main = $_->{attrs}->{has_main}
+                           ? '/INCLUDE=main' : '';
+                       ( "\@ IF nomain THEN WRITE OPT_FILE \"$x/LIB$main",
+                         "\@ IF .NOT. nomain THEN WRITE OPT_FILE \"$x/LIB" ) }
                  grep { $_->{lib} =~ m|\.OLB$| }
                  @deps))
           ."\"";
@@ -1393,8 +1391,6 @@ EOF
       return <<"EOF"
 $bin : $deps
         $analyse_objs
-        @ incmain = "/INCLUDE=main"
-        @ IF .NOT. nomain THEN incmain = ""
         @ OPEN/WRITE/SHARE=READ OPT_FILE $binname.OPT
         $write_opt1
         $write_opt2

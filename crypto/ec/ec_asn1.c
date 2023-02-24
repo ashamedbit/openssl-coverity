@@ -206,7 +206,7 @@ static int ec_asn1_group2fieldid(const EC_GROUP *group, X9_62_FIELDID *field)
 
     if (nid == NID_X9_62_prime_field) {
         if ((tmp = BN_new()) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
         }
         /* the parameters are specified by the prime number p */
@@ -235,7 +235,7 @@ static int ec_asn1_group2fieldid(const EC_GROUP *group, X9_62_FIELDID *field)
         char_two = field->p.char_two;
 
         if (char_two == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
         }
 
@@ -261,7 +261,7 @@ static int ec_asn1_group2fieldid(const EC_GROUP *group, X9_62_FIELDID *field)
 
             char_two->p.tpBasis = ASN1_INTEGER_new();
             if (char_two->p.tpBasis == NULL) {
-                ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+                ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
             if (!ASN1_INTEGER_set(char_two->p.tpBasis, (long)k)) {
@@ -276,7 +276,7 @@ static int ec_asn1_group2fieldid(const EC_GROUP *group, X9_62_FIELDID *field)
 
             char_two->p.ppBasis = X9_62_PENTANOMIAL_new();
             if (char_two->p.ppBasis == NULL) {
-                ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+                ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
 
@@ -289,7 +289,7 @@ static int ec_asn1_group2fieldid(const EC_GROUP *group, X9_62_FIELDID *field)
             /* for ONB the parameters are (asn1) NULL */
             char_two->p.onBasis = ASN1_NULL_new();
             if (char_two->p.onBasis == NULL) {
-                ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+                ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
         }
@@ -318,7 +318,7 @@ static int ec_asn1_group2curve(const EC_GROUP *group, X9_62_CURVE *curve)
         return 0;
 
     if ((tmp_1 = BN_new()) == NULL || (tmp_2 = BN_new()) == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -335,8 +335,10 @@ static int ec_asn1_group2curve(const EC_GROUP *group, X9_62_CURVE *curve)
      */
     len = ((size_t)EC_GROUP_get_degree(group) + 7) / 8;
     if ((a_buf = OPENSSL_malloc(len)) == NULL
-        || (b_buf = OPENSSL_malloc(len)) == NULL)
+        || (b_buf = OPENSSL_malloc(len)) == NULL) {
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
+    }
     if (BN_bn2binpad(tmp_1, a_buf, len) < 0
         || BN_bn2binpad(tmp_2, b_buf, len) < 0) {
         ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
@@ -354,7 +356,7 @@ static int ec_asn1_group2curve(const EC_GROUP *group, X9_62_CURVE *curve)
     if (group->seed) {
         if (!curve->seed)
             if ((curve->seed = ASN1_BIT_STRING_new()) == NULL) {
-                ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+                ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
                 goto err;
             }
         ossl_asn1_string_set_bits_left(curve->seed, 0);
@@ -391,7 +393,7 @@ ECPARAMETERS *EC_GROUP_get_ecparameters(const EC_GROUP *group,
 
     if (params == NULL) {
         if ((ret = ECPARAMETERS_new()) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
         }
     } else
@@ -427,7 +429,7 @@ ECPARAMETERS *EC_GROUP_get_ecparameters(const EC_GROUP *group,
     }
     if (ret->base == NULL && (ret->base = ASN1_OCTET_STRING_new()) == NULL) {
         OPENSSL_free(buffer);
-        ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     ASN1_STRING_set0(ret->base, buffer, len);
@@ -472,7 +474,7 @@ ECPKPARAMETERS *EC_GROUP_get_ecpkparameters(const EC_GROUP *group,
 
     if (ret == NULL) {
         if ((ret = ECPKPARAMETERS_new()) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             return NULL;
         }
     } else {
@@ -578,7 +580,7 @@ EC_GROUP *EC_GROUP_new_from_ecparameters(const ECPARAMETERS *params)
         }
 
         if ((p = BN_new()) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_BN_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
         }
 
@@ -696,8 +698,10 @@ EC_GROUP *EC_GROUP_new_from_ecparameters(const ECPARAMETERS *params)
             goto err;
         }
         OPENSSL_free(ret->seed);
-        if ((ret->seed = OPENSSL_malloc(params->curve->seed->length)) == NULL)
+        if ((ret->seed = OPENSSL_malloc(params->curve->seed->length)) == NULL) {
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
+        }
         memcpy(ret->seed, params->curve->seed->data,
                params->curve->seed->length);
         ret->seed_len = params->curve->seed->length;
@@ -941,7 +945,7 @@ EC_KEY *d2i_ECPrivateKey(EC_KEY **a, const unsigned char **in, long len)
 
     if (a == NULL || *a == NULL) {
         if ((ret = EC_KEY_new()) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_EC_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
         }
     } else
@@ -1029,7 +1033,7 @@ int i2d_ECPrivateKey(const EC_KEY *a, unsigned char **out)
     }
 
     if ((priv_key = EC_PRIVATEKEY_new()) == NULL) {
-        ERR_raise(ERR_LIB_EC, ERR_R_EC_LIB);
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
         goto err;
     }
 
@@ -1057,7 +1061,7 @@ int i2d_ECPrivateKey(const EC_KEY *a, unsigned char **out)
     if (!(a->enc_flag & EC_PKEY_NO_PUBKEY)) {
         priv_key->publicKey = ASN1_BIT_STRING_new();
         if (priv_key->publicKey == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_ASN1_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             goto err;
         }
 
@@ -1105,7 +1109,7 @@ EC_KEY *d2i_ECParameters(EC_KEY **a, const unsigned char **in, long len)
 
     if (a == NULL || *a == NULL) {
         if ((ret = EC_KEY_new()) == NULL) {
-            ERR_raise(ERR_LIB_EC, ERR_R_EC_LIB);
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             return NULL;
         }
     } else
@@ -1169,8 +1173,10 @@ int i2o_ECPublicKey(const EC_KEY *a, unsigned char **out)
         return buf_len;
 
     if (*out == NULL) {
-        if ((*out = OPENSSL_malloc(buf_len)) == NULL)
+        if ((*out = OPENSSL_malloc(buf_len)) == NULL) {
+            ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
         new_buffer = 1;
     }
     if (!EC_POINT_point2oct(a->group, a->pub_key, a->conv_form,
@@ -1195,7 +1201,8 @@ DECLARE_ASN1_ENCODE_FUNCTIONS_name(ECDSA_SIG, ECDSA_SIG)
 ECDSA_SIG *ECDSA_SIG_new(void)
 {
     ECDSA_SIG *sig = OPENSSL_zalloc(sizeof(*sig));
-
+    if (sig == NULL)
+        ERR_raise(ERR_LIB_EC, ERR_R_MALLOC_FAILURE);
     return sig;
 }
 

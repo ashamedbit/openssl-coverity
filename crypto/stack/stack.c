@@ -75,6 +75,7 @@ OPENSSL_STACK *OPENSSL_sk_dup(const OPENSSL_STACK *sk)
     return ret;
 
  err:
+    ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
     OPENSSL_sk_free(ret);
     return NULL;
 }
@@ -123,6 +124,7 @@ OPENSSL_STACK *OPENSSL_sk_deep_copy(const OPENSSL_STACK *sk,
     return ret;
 
  err:
+    ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
     OPENSSL_sk_free(ret);
     return NULL;
 }
@@ -196,8 +198,10 @@ static int sk_reserve(OPENSSL_STACK *st, int n, int exact)
          * At this point, |st->num_alloc| and |st->num| are 0;
          * so |num_alloc| value is |n| or |min_nodes| if greater than |n|.
          */
-        if ((st->data = OPENSSL_zalloc(sizeof(void *) * num_alloc)) == NULL)
+        if ((st->data = OPENSSL_zalloc(sizeof(void *) * num_alloc)) == NULL) {
+            ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
         st->num_alloc = num_alloc;
         return 1;
     }
@@ -215,8 +219,10 @@ static int sk_reserve(OPENSSL_STACK *st, int n, int exact)
     }
 
     tmpdata = OPENSSL_realloc((void *)st->data, sizeof(void *) * num_alloc);
-    if (tmpdata == NULL)
+    if (tmpdata == NULL) {
+        ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
         return 0;
+    }
 
     st->data = tmpdata;
     st->num_alloc = num_alloc;
@@ -227,8 +233,10 @@ OPENSSL_STACK *OPENSSL_sk_new_reserve(OPENSSL_sk_compfunc c, int n)
 {
     OPENSSL_STACK *st = OPENSSL_zalloc(sizeof(OPENSSL_STACK));
 
-    if (st == NULL)
+    if (st == NULL) {
+        ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
 
     st->comp = c;
 
@@ -297,9 +305,6 @@ void *OPENSSL_sk_delete_ptr(OPENSSL_STACK *st, const void *p)
 {
     int i;
 
-    if (st == NULL)
-        return NULL;
-
     for (i = 0; i < st->num; i++)
         if (st->data[i] == p)
             return internal_delete(st, i);
@@ -308,8 +313,15 @@ void *OPENSSL_sk_delete_ptr(OPENSSL_STACK *st, const void *p)
 
 void *OPENSSL_sk_delete(OPENSSL_STACK *st, int loc)
 {
-    if (st == NULL || loc < 0 || loc >= st->num)
+    if (st == NULL) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_NULL_PARAMETER);
         return NULL;
+    }
+    if (loc < 0 || loc >= st->num) {
+        ERR_raise_data(ERR_LIB_X509, ERR_R_PASSED_INVALID_ARGUMENT,
+                       "loc=%d", loc);
+        return NULL;
+    }
 
     return internal_delete(st, loc);
 }
@@ -393,21 +405,37 @@ int OPENSSL_sk_unshift(OPENSSL_STACK *st, const void *data)
 
 void *OPENSSL_sk_shift(OPENSSL_STACK *st)
 {
-    if (st == NULL || st->num == 0)
+    if (st == NULL) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_NULL_PARAMETER);
         return NULL;
+    }
+    if (st->num == 0) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_INVALID_ARGUMENT);
+        return NULL;
+    }
     return internal_delete(st, 0);
 }
 
 void *OPENSSL_sk_pop(OPENSSL_STACK *st)
 {
-    if (st == NULL || st->num == 0)
+    if (st == NULL) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_NULL_PARAMETER);
         return NULL;
+    }
+    if (st->num == 0) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_INVALID_ARGUMENT);
+        return NULL;
+    }
     return internal_delete(st, st->num - 1);
 }
 
 void OPENSSL_sk_zero(OPENSSL_STACK *st)
 {
-    if (st == NULL || st->num == 0)
+    if (st == NULL) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_NULL_PARAMETER);
+        return;
+    }
+    if (st->num == 0)
         return;
     memset(st->data, 0, sizeof(*st->data) * st->num);
     st->num = 0;
@@ -440,19 +468,26 @@ int OPENSSL_sk_num(const OPENSSL_STACK *st)
 
 void *OPENSSL_sk_value(const OPENSSL_STACK *st, int i)
 {
-    if (st == NULL || i < 0 || i >= st->num)
+    if (st == NULL) {
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_NULL_PARAMETER);
         return NULL;
+    }
+    if (i < 0 || i >= st->num) {
+        ERR_raise_data(ERR_LIB_X509, ERR_R_PASSED_INVALID_ARGUMENT,
+                       "i=%d", i);
+        return NULL;
+    }
     return (void *)st->data[i];
 }
 
 void *OPENSSL_sk_set(OPENSSL_STACK *st, int i, const void *data)
 {
     if (st == NULL) {
-        ERR_raise(ERR_LIB_CRYPTO, ERR_R_PASSED_NULL_PARAMETER);
+        ERR_raise(ERR_LIB_X509, ERR_R_PASSED_NULL_PARAMETER);
         return NULL;
     }
     if (i < 0 || i >= st->num) {
-        ERR_raise_data(ERR_LIB_CRYPTO, ERR_R_PASSED_INVALID_ARGUMENT,
+        ERR_raise_data(ERR_LIB_X509, ERR_R_PASSED_INVALID_ARGUMENT,
                        "i=%d", i);
         return NULL;
     }

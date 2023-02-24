@@ -11,24 +11,19 @@ use strict;
 use warnings;
 
 use File::Spec;
-use OpenSSL::Test qw/:DEFAULT data_file with/;
+use OpenSSL::Test qw/:DEFAULT data_file/;
 use OpenSSL::Test::Utils;
 
 sub pkey_check {
     my $f = shift;
-    my $pubcheck = shift;
-    my @checkopt = ('-check');
 
-    @checkopt = ('-pubcheck', '-pubin') if $pubcheck;
-
-    return run(app(['openssl', 'pkey', @checkopt, '-text',
+    return run(app(['openssl', 'pkey', '-check', '-text',
                     '-in', $f]));
 }
 
 sub check_key {
     my $f = shift;
     my $should_fail = shift;
-    my $pubcheck = shift;
     my $str;
 
 
@@ -38,10 +33,11 @@ sub check_key {
     $f = data_file($f);
 
     if ( -s $f ) {
-        with({ exit_checker => sub { return shift == $should_fail; } },
-            sub {
-                ok(pkey_check($f, $pubcheck), $str);
-            });
+        if ($should_fail) {
+            ok(!pkey_check($f), $str);
+        } else {
+            ok(pkey_check($f), $str);
+        }
     } else {
         fail("Missing file $f");
     }
@@ -70,37 +66,15 @@ push(@positive_tests, (
     "dhpkey.pem"
     )) unless disabled("dh");
 
-my @negative_pubtests = ();
-
-push(@negative_pubtests, (
-    "dsapub_noparam.der"
-    )) unless disabled("dsa");
-
-my @positive_pubtests = ();
-
-push(@positive_pubtests, (
-    "dsapub.pem"
-    )) unless disabled("dsa");
-
 plan skip_all => "No tests within the current enabled feature set"
-    unless @negative_tests && @positive_tests
-           && @negative_pubtests && @positive_pubtests;
+    unless @negative_tests && @positive_tests;
 
-plan tests => scalar(@negative_tests) + scalar(@positive_tests)
-              + scalar(@negative_pubtests) + scalar(@positive_pubtests);
+plan tests => scalar(@negative_tests) + scalar(@positive_tests);
 
 foreach my $t (@negative_tests) {
-    check_key($t, 1, 0);
+    check_key($t, 1);
 }
 
 foreach my $t (@positive_tests) {
-    check_key($t, 0, 0);
-}
-
-foreach my $t (@negative_pubtests) {
-    check_key($t, 1, 1);
-}
-
-foreach my $t (@positive_pubtests) {
-    check_key($t, 0, 1);
+    check_key($t, 0);
 }

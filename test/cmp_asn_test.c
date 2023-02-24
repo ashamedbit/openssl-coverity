@@ -47,10 +47,7 @@ static int execute_cmp_asn1_get_int_test(CMP_ASN_TEST_FIXTURE *fixture)
 
     if (!TEST_ptr(asn1integer))
         return 0;
-    if (!TEST_true(ASN1_INTEGER_set(asn1integer, 77))) {
-        ASN1_INTEGER_free(asn1integer);
-        return 0;
-    }
+    ASN1_INTEGER_set(asn1integer, 77);
     res = TEST_int_eq(77, ossl_cmp_asn1_get_int(asn1integer));
     ASN1_INTEGER_free(asn1integer);
     return res;
@@ -106,6 +103,7 @@ static int test_ASN1_OCTET_STRING_set_tgt_is_src(void)
     EXECUTE_TEST(execute_CMP_ASN1_OCTET_STRING_set1_test, tear_down);
     return result;
 }
+
 
 void cleanup_tests(void)
 {

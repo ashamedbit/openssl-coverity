@@ -103,8 +103,11 @@ static void *kdf_tls1_prf_new(void *provctx)
     if (!ossl_prov_is_running())
         return NULL;
 
-    if ((ctx = OPENSSL_zalloc(sizeof(*ctx))) != NULL)
-        ctx->provctx = provctx;
+    if ((ctx = OPENSSL_zalloc(sizeof(*ctx))) == NULL) {
+        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
+        return NULL;
+    }
+    ctx->provctx = provctx;
     return ctx;
 }
 
@@ -411,8 +414,10 @@ static int tls1_prf_alg(EVP_MAC_CTX *mdctx, EVP_MAC_CTX *sha1ctx,
                              seed, seed_len, out, olen))
             return 0;
 
-        if ((tmp = OPENSSL_malloc(olen)) == NULL)
+        if ((tmp = OPENSSL_malloc(olen)) == NULL) {
+            ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
             return 0;
+        }
 
         if (!tls1_prf_P_hash(sha1ctx, sec + slen - L_S2, L_S2,
                              seed, seed_len, tmp, olen)) {

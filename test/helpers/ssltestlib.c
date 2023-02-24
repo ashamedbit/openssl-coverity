@@ -12,6 +12,7 @@
 #include "internal/nelem.h"
 #include "ssltestlib.h"
 #include "../testutil.h"
+#include "internal/e_os.h" /* for ossl_sleep() etc. */
 
 #ifdef OPENSSL_SYS_UNIX
 # include <unistd.h>
@@ -349,7 +350,8 @@ static int mempacket_test_read(BIO *bio, char *out, int outl)
     unsigned int seq, offset, len, epoch;
 
     BIO_clear_retry_flags(bio);
-    if ((thispkt = sk_MEMPACKET_value(ctx->pkts, 0)) == NULL
+    if (sk_MEMPACKET_num(ctx->pkts) <= 0
+        || (thispkt = sk_MEMPACKET_value(ctx->pkts, 0)) == NULL
         || thispkt->num != ctx->currpkt) {
         /* Probably run out of data */
         BIO_set_retry_read(bio);
@@ -602,8 +604,9 @@ int mempacket_test_inject(BIO *bio, const char *in, int inl, int pktnum,
             ctx->lastpkt++;
             do {
                 i++;
-                nextpkt = sk_MEMPACKET_value(ctx->pkts, i);
-                if (nextpkt != NULL && nextpkt->num == ctx->lastpkt)
+                if (i < sk_MEMPACKET_num(ctx->pkts)
+                        && (nextpkt = sk_MEMPACKET_value(ctx->pkts, i)) != NULL
+                        && nextpkt->num == ctx->lastpkt)
                     ctx->lastpkt++;
                 else
                     return inl;
@@ -1161,7 +1164,7 @@ int create_bare_ssl_connection(SSL *serverssl, SSL *clientssl, int want,
              * give the DTLS timer a chance to do something. We only do this for
              * the first few times to prevent hangs.
              */
-            OSSL_sleep(50);
+            ossl_sleep(50);
         }
     } while (retc <=0 || rets <= 0);
 

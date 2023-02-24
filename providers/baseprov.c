@@ -19,6 +19,7 @@
 #include "prov/providercommon.h"
 #include "prov/implementations.h"
 #include "prov/provider_util.h"
+#include "internal/nelem.h"
 
 /*
  * Forward declarations to ensure that interface functions are correctly

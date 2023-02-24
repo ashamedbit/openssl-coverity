@@ -62,13 +62,6 @@ static int final_maxfragmentlen(SSL_CONNECTION *s, unsigned int context,
                                 int sent);
 static int init_post_handshake_auth(SSL_CONNECTION *s, unsigned int context);
 static int final_psk(SSL_CONNECTION *s, unsigned int context, int sent);
-static int tls_init_compress_certificate(SSL_CONNECTION *sc, unsigned int context);
-static EXT_RETURN tls_construct_compress_certificate(SSL_CONNECTION *sc, WPACKET *pkt,
-                                                     unsigned int context,
-                                                     X509 *x, size_t chainidx);
-static int tls_parse_compress_certificate(SSL_CONNECTION *sc, PACKET *pkt,
-                                          unsigned int context,
-                                          X509 *x, size_t chainidx);
 
 /* Structure to define a built-in extension */
 typedef struct extensions_definition_st {
@@ -366,15 +359,6 @@ static const EXTENSION_DEFINITION ext_defs[] = {
         NULL, NULL, NULL, tls_construct_stoc_cryptopro_bug, NULL, NULL
     },
     {
-        TLSEXT_TYPE_compress_certificate,
-        SSL_EXT_CLIENT_HELLO | SSL_EXT_TLS1_3_CERTIFICATE_REQUEST
-        | SSL_EXT_TLS_IMPLEMENTATION_ONLY | SSL_EXT_TLS1_3_ONLY,
-        tls_init_compress_certificate,
-        tls_parse_compress_certificate, tls_parse_compress_certificate,
-        tls_construct_compress_certificate, tls_construct_compress_certificate,
-        NULL
-    },
-    {
         TLSEXT_TYPE_early_data,
         SSL_EXT_CLIENT_HELLO | SSL_EXT_TLS1_3_ENCRYPTED_EXTENSIONS
         | SSL_EXT_TLS1_3_NEW_SESSION_TICKET | SSL_EXT_TLS1_3_ONLY,
@@ -605,7 +589,7 @@ int tls_collect_extensions(SSL_CONNECTION *s, PACKET *packet,
     num_exts = OSSL_NELEM(ext_defs) + (exts != NULL ? exts->meths_count : 0);
     raw_extensions = OPENSSL_zalloc(num_exts * sizeof(*raw_extensions));
     if (raw_extensions == NULL) {
-        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_CRYPTO_LIB);
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_MALLOC_FAILURE);
         return 0;
     }
 
@@ -832,7 +816,6 @@ int tls_construct_extensions(SSL_CONNECTION *s, WPACKET *pkt,
     size_t i;
     int min_version, max_version = 0, reason;
     const EXTENSION_DEFINITION *thisexd;
-    int for_comp = (context & SSL_EXT_TLS1_3_CERTIFICATE_COMPRESSION) != 0;
 
     if (!WPACKET_start_sub_packet_u16(pkt)
                /*
@@ -843,17 +826,15 @@ int tls_construct_extensions(SSL_CONNECTION *s, WPACKET *pkt,
             || ((context &
                  (SSL_EXT_CLIENT_HELLO | SSL_EXT_TLS1_2_SERVER_HELLO)) != 0
                 && !WPACKET_set_flags(pkt,
-                                      WPACKET_FLAGS_ABANDON_ON_ZERO_LENGTH))) {
-        if (!for_comp)
-            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+                                     WPACKET_FLAGS_ABANDON_ON_ZERO_LENGTH))) {
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         return 0;
     }
 
     if ((context & SSL_EXT_CLIENT_HELLO) != 0) {
         reason = ssl_get_min_max_version(s, &min_version, &max_version, NULL);
         if (reason != 0) {
-            if (!for_comp)
-                SSLfatal(s, SSL_AD_INTERNAL_ERROR, reason);
+            SSLfatal(s, SSL_AD_INTERNAL_ERROR, reason);
             return 0;
         }
     }
@@ -897,8 +878,7 @@ int tls_construct_extensions(SSL_CONNECTION *s, WPACKET *pkt,
     }
 
     if (!WPACKET_close(pkt)) {
-        if (!for_comp)
-            SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
+        SSLfatal(s, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
         return 0;
     }
 
@@ -1429,7 +1409,7 @@ static int final_key_share(SSL_CONNECTION *s, unsigned int context, int sent)
                     group_id = pgroups[i];
 
                     if (check_in_list(s, group_id, clntgroups, clnt_num_groups,
-                                      1))
+                                      2))
                         break;
                 }
 
@@ -1727,12 +1707,14 @@ static int final_maxfragmentlen(SSL_CONNECTION *s, unsigned int context,
         return 0;
     }
 
-    if (s->session && USE_MAX_FRAGMENT_LENGTH_EXT(s->session)) {
-        s->rlayer.rrlmethod->set_max_frag_len(s->rlayer.rrl,
-                                              GET_MAX_FRAGMENT_LENGTH(s->session));
-        s->rlayer.wrlmethod->set_max_frag_len(s->rlayer.wrl,
-                                              ssl_get_max_send_fragment(s));
-    }
+    /* Current SSL buffer is lower than requested MFL */
+    if (s->session && USE_MAX_FRAGMENT_LENGTH_EXT(s->session)
+            && s->max_send_fragment < GET_MAX_FRAGMENT_LENGTH(s->session))
+        /* trigger a larger buffer reallocation */
+        if (!ssl3_setup_buffers(s)) {
+            /* SSLfatal() already called */
+            return 0;
+        }
 
     return 1;
 }
@@ -1758,114 +1740,5 @@ static int final_psk(SSL_CONNECTION *s, unsigned int context, int sent)
         return 0;
     }
 
-    return 1;
-}
-
-static int tls_init_compress_certificate(SSL_CONNECTION *sc, unsigned int context)
-{
-    memset(sc->ext.compress_certificate_from_peer, 0,
-           sizeof(sc->ext.compress_certificate_from_peer));
-    return 1;
-}
-
-/* The order these are put into the packet imply a preference order: [brotli, zlib, zstd] */
-static EXT_RETURN tls_construct_compress_certificate(SSL_CONNECTION *sc, WPACKET *pkt,
-                                                     unsigned int context,
-                                                     X509 *x, size_t chainidx)
-{
-#ifndef OPENSSL_NO_COMP_ALG
-    int i;
-
-    if (!ossl_comp_has_alg(0))
-        return EXT_RETURN_NOT_SENT;
-
-    /* Do not indicate we support receiving compressed certificates */
-    if ((sc->options & SSL_OP_NO_RX_CERTIFICATE_COMPRESSION) != 0)
-        return EXT_RETURN_NOT_SENT;
-
-    if (sc->cert_comp_prefs[0] == TLSEXT_comp_cert_none)
-        return EXT_RETURN_NOT_SENT;
-
-    if (!WPACKET_put_bytes_u16(pkt, TLSEXT_TYPE_compress_certificate)
-            || !WPACKET_start_sub_packet_u16(pkt)
-            || !WPACKET_start_sub_packet_u8(pkt))
-        goto err;
-
-    for (i = 0; sc->cert_comp_prefs[i] != TLSEXT_comp_cert_none; i++) {
-        if (!WPACKET_put_bytes_u16(pkt, sc->cert_comp_prefs[i]))
-            goto err;
-    }
-    if (!WPACKET_close(pkt) || !WPACKET_close(pkt))
-        goto err;
-
-    sc->ext.compress_certificate_sent = 1;
-    return EXT_RETURN_SENT;
- err:
-    SSLfatal(sc, SSL_AD_INTERNAL_ERROR, ERR_R_INTERNAL_ERROR);
-    return EXT_RETURN_FAIL;
-#else
-    return EXT_RETURN_NOT_SENT;
-#endif
-}
-
-#ifndef OPENSSL_NO_COMP_ALG
-static int tls_comp_in_pref(SSL_CONNECTION *sc, int alg)
-{
-    int i;
-
-    /* ossl_comp_has_alg() considers 0 as "any" */
-    if (alg == 0)
-        return 0;
-    /* Make sure algorithm is enabled */
-    if (!ossl_comp_has_alg(alg))
-        return 0;
-    /* If no preferences are set, it's ok */
-    if (sc->cert_comp_prefs[0] == TLSEXT_comp_cert_none)
-        return 1;
-    /* Find the algorithm */
-    for (i = 0; i < TLSEXT_comp_cert_limit; i++)
-        if (sc->cert_comp_prefs[i] == alg)
-            return 1;
-    return 0;
-}
-#endif
-
-int tls_parse_compress_certificate(SSL_CONNECTION *sc, PACKET *pkt, unsigned int context,
-                                   X509 *x, size_t chainidx)
-{
-#ifndef OPENSSL_NO_COMP_ALG
-    PACKET supported_comp_algs;
-    unsigned int comp;
-    int already_set[TLSEXT_comp_cert_limit];
-    int j = 0;
-
-    /* If no algorithms are available, ignore the extension */
-    if (!ossl_comp_has_alg(0))
-        return 1;
-
-    /* Ignore the extension and don't send compressed certificates */
-    if ((sc->options & SSL_OP_NO_TX_CERTIFICATE_COMPRESSION) != 0)
-        return 1;
-
-    if (!PACKET_as_length_prefixed_1(pkt, &supported_comp_algs)
-            || PACKET_remaining(&supported_comp_algs) == 0) {
-        SSLfatal(sc, SSL_AD_DECODE_ERROR, SSL_R_BAD_EXTENSION);
-        return 0;
-    }
-
-    memset(already_set, 0, sizeof(already_set));
-    /*
-     * The preference array has real values, so take a look at each
-     * value coming in, and make sure it's in our preference list
-     * The array is 0 (i.e. "none") terminated
-     * The preference list only contains supported algorithms
-     */
-    while (PACKET_get_net_2(&supported_comp_algs, &comp)) {
-        if (tls_comp_in_pref(sc, comp) && !already_set[comp]) {
-            sc->ext.compress_certificate_from_peer[j++] = comp;
-            already_set[comp] = 1;
-        }
-    }
-#endif
     return 1;
 }

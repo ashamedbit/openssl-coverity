@@ -14,7 +14,6 @@
 #include "internal/quic_cc.h"
 #include "internal/quic_ssl.h"
 #include "testutil.h"
-#include "quic_record_test_util.h"
 
 static const QUIC_CONN_ID empty_conn_id = {0, {0}};
 
@@ -31,6 +30,10 @@ static const QUIC_CONN_ID empty_conn_id = {0, {0}};
 #define RX_TEST_OP_CHECK_KEY_EPOCH        10 /* check key epoch value matches */
 #define RX_TEST_OP_KEY_UPDATE_TIMEOUT     11 /* complete key update process */
 #define RX_TEST_OP_SET_INIT_KEY_PHASE     12 /* initial Key Phase bit value */
+
+/* These are subtest ops for RX_TEST_OP_CHECK_PKT, to additionally check frames */
+#define RX_TEST_OP_CHECK_PKT_FRAMES_OK        1 /* check that frames are parsed ok */
+#define RX_TEST_OP_CHECK_PKT_FRAMES_INVALID   2 /* check that frames fail to parse ok */
 
 struct rx_test_op {
     unsigned char op;
@@ -70,6 +73,18 @@ struct rx_test_op {
         RX_TEST_OP_CHECK_PKT, 0, (expect_body), sizeof(expect_body),  \
         &(expect_hdr), 0, 0, 0, NULL, NULL                          \
     },
+#define RX_OP_CHECK_PKT_FRAMES_OK(expect_hdr, expect_body)          \
+    {                                                               \
+        RX_TEST_OP_CHECK_PKT, RX_TEST_OP_CHECK_PKT_FRAMES_OK,       \
+        (expect_body), sizeof(expect_body), &(expect_hdr),          \
+        0, 0, 0, NULL, NULL                                         \
+    },
+#define RX_OP_CHECK_PKT_FRAMES_INVALID(expect_hdr, expect_body)     \
+    {                                                               \
+        RX_TEST_OP_CHECK_PKT, RX_TEST_OP_CHECK_PKT_FRAMES_INVALID,  \
+        (expect_body), sizeof(expect_body), &(expect_hdr),          \
+        0, 0, 0, NULL, NULL                                         \
+    },
 #define RX_OP_CHECK_NO_PKT() \
     { RX_TEST_OP_CHECK_NO_PKT, 0, NULL, 0, NULL, 0, 0, 0, NULL, NULL },
 #define RX_OP_CHECK_KEY_EPOCH(expected) \
@@ -83,10 +98,22 @@ struct rx_test_op {
     RX_OP_INJECT(rx_script_##n##_in)
 #define RX_OP_CHECK_PKT_N(n)                                       \
     RX_OP_CHECK_PKT(rx_script_##n##_expect_hdr, rx_script_##n##_body)
+#define RX_OP_CHECK_PKT_FRAMES_OK_N(n)                             \
+    RX_OP_CHECK_PKT_FRAMES_OK(rx_script_##n##_expect_hdr, rx_script_##n##_body)
+#define RX_OP_CHECK_PKT_FRAMES_INVALID_N(n)                        \
+    RX_OP_CHECK_PKT_FRAMES_INVALID(rx_script_##n##_expect_hdr, rx_script_##n##_body)
 
 #define RX_OP_INJECT_CHECK(n)                                  \
     RX_OP_INJECT_N(n)                                              \
     RX_OP_CHECK_PKT_N(n)
+
+#define RX_OP_INJECT_CHECK_FRAMES_OK(n)                            \
+    RX_OP_INJECT_N(n)                                              \
+    RX_OP_CHECK_PKT_FRAMES_OK_N(n)
+
+#define RX_OP_INJECT_CHECK_FRAMES_INVALID(n)                       \
+    RX_OP_INJECT_N(n)                                              \
+    RX_OP_CHECK_PKT_FRAMES_INVALID_N(3)
 
 /* 1. RFC 9001 - A.3 Server Initial */
 static const unsigned char rx_script_1_in[] = {
@@ -122,7 +149,7 @@ static const QUIC_CONN_ID rx_script_1_dcid = {
 
 static const QUIC_PKT_HDR rx_script_1_expect_hdr = {
     QUIC_PKT_TYPE_INITIAL,
-    0, 0, 2, 0, 1, 0, 1, { 0, {0} },
+    0, 0, 2, 0, 1, 1, { 0, {0} },
     { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } },
     { 0, 1, 0, 0 },
     NULL, 0,
@@ -134,13 +161,12 @@ static const struct rx_test_op rx_script_1[] = {
     RX_OP_SET_INIT_LARGEST_PN(0)
     RX_OP_ADD_RX_DCID(empty_conn_id)
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_1_dcid)
-    RX_OP_INJECT_CHECK(1)
+    RX_OP_INJECT_CHECK_FRAMES_OK(1)
     RX_OP_CHECK_NO_PKT()
     RX_OP_END
 };
 
 /* 2. RFC 9001 - A.5 ChaCha20-Poly1305 Short Header Packet */
-#ifndef OPENSSL_NO_CHACHA
 static const unsigned char rx_script_2_in[] = {
     0x4c, 0xfe, 0x41, 0x89, 0x65, 0x5e, 0x5c, 0xd5, 0x5c, 0x41, 0xf6, 0x90,
     0x80, 0x57, 0x5d, 0x79, 0x99, 0xc2, 0x5a, 0x5b, 0xfb
@@ -158,7 +184,7 @@ static const unsigned char rx_script_2_body[] = {
 
 static const QUIC_PKT_HDR rx_script_2_expect_hdr = {
     QUIC_PKT_TYPE_1RTT,
-    0, 0, 3, 0, 1, 0, 0, {0, {0}}, {0, {0}},
+    0, 0, 3, 0, 1, 0, {0, {0}}, {0, {0}},
     {0x00, 0xbf, 0xf4, 0x00},
     NULL, 0,
     1, NULL
@@ -169,11 +195,10 @@ static const struct rx_test_op rx_script_2[] = {
     RX_OP_ADD_RX_DCID(empty_conn_id)
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT, QRL_SUITE_CHACHA20POLY1305,
                          rx_script_2_secret)
-    RX_OP_INJECT_CHECK(2)
+    RX_OP_INJECT_CHECK_FRAMES_OK(2)
     RX_OP_CHECK_NO_PKT()
     RX_OP_END
 };
-#endif /* !defined(OPENSSL_NO_CHACHA) */
 
 /* 3. Real World - Version Negotiation Response */
 static const unsigned char rx_script_3_in[] = {
@@ -194,7 +219,6 @@ static const QUIC_PKT_HDR rx_script_3_expect_hdr = {
     0,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},                                   /* DCID */
     {12, {0x35, 0x3c, 0x1b, 0x97, 0xca, 0xf8,   /* SCID */
@@ -216,7 +240,7 @@ static const struct rx_test_op rx_script_3[] = {
      * However, the depacketizer still handles this sort of packet, so
      * we still pass the packet to it, to exercise what it does.
      */
-    RX_OP_INJECT_CHECK(3)
+    RX_OP_INJECT_CHECK_FRAMES_OK(3)
     RX_OP_CHECK_NO_PKT()
     RX_OP_END
 };
@@ -247,7 +271,6 @@ static const QUIC_PKT_HDR rx_script_4_expect_hdr = {
     0,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0xad, 0x15, 0x3f, 0xae}},      /* SCID */
@@ -271,7 +294,7 @@ static const unsigned char rx_script_4_body[] = {
 
 static const struct rx_test_op rx_script_4[] = {
     RX_OP_ADD_RX_DCID(empty_conn_id)
-    RX_OP_INJECT_CHECK(4)
+    RX_OP_INJECT_CHECK_FRAMES_OK(4)
     RX_OP_CHECK_NO_PKT()
     RX_OP_END
 };
@@ -429,7 +452,6 @@ static const QUIC_PKT_HDR rx_script_5a_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0x83, 0xd0, 0x0a, 0x27}},      /* SCID */
@@ -486,7 +508,6 @@ static const QUIC_PKT_HDR rx_script_5b_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0x83, 0xd0, 0x0a, 0x27}},      /* SCID */
@@ -560,7 +581,6 @@ static const QUIC_PKT_HDR rx_script_5c_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},                           /* DCID */
     {0, {0}},                           /* SCID */
@@ -582,32 +602,34 @@ static const struct rx_test_op rx_script_5[] = {
     RX_OP_ADD_RX_DCID(empty_conn_id)
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_5_c2s_init_dcid)
     RX_OP_INJECT_N(5)
-    RX_OP_CHECK_PKT_N(5a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5a)
     RX_OP_CHECK_NO_PKT() /* not got secret for next packet yet */
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_HANDSHAKE,
                       QRL_SUITE_AES128GCM, rx_script_5_handshake_secret)
-    RX_OP_CHECK_PKT_N(5b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5b)
     RX_OP_CHECK_NO_PKT() /* not got secret for next packet yet */
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                       QRL_SUITE_AES128GCM, rx_script_5_1rtt_secret)
-    RX_OP_CHECK_PKT_N(5c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5c)
     RX_OP_CHECK_NO_PKT()
 
-    /* Discard Initial EL and try injecting the packet again */
-    RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_INITIAL)
+    /* Try injecting the packet again */
     RX_OP_INJECT_N(5)
-    /* Initial packet is not output because we have discarded Initial keys */
-    RX_OP_CHECK_PKT_N(5b)
-    RX_OP_CHECK_PKT_N(5c)
+    /*
+     * Initial packet is not output due to receiving a Handshake packet causing
+     * auto-discard of Initial keys
+     */
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5c)
     RX_OP_CHECK_NO_PKT()
     /* Try again with discarded keys */
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_HANDSHAKE)
     RX_OP_INJECT_N(5)
-    RX_OP_CHECK_PKT_N(5c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5c)
     RX_OP_CHECK_NO_PKT()
     /* Try again */
     RX_OP_INJECT_N(5)
-    RX_OP_CHECK_PKT_N(5c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5c)
     RX_OP_CHECK_NO_PKT()
     /* Try again with discarded 1-RTT keys */
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_1RTT)
@@ -620,18 +642,17 @@ static const struct rx_test_op rx_script_5[] = {
     RX_OP_INJECT_N(5)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_5_c2s_init_dcid)
-    RX_OP_CHECK_PKT_N(5a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5a)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_HANDSHAKE,
                       QRL_SUITE_AES128GCM, rx_script_5_handshake_secret)
-    RX_OP_CHECK_PKT_N(5b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5b)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                       QRL_SUITE_AES128GCM, rx_script_5_1rtt_secret)
-    RX_OP_CHECK_PKT_N(5c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(5c)
     RX_OP_CHECK_NO_PKT()
 
-    RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_INITIAL)
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_HANDSHAKE)
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_1RTT)
     RX_OP_INJECT_N(5)
@@ -795,7 +816,6 @@ static const QUIC_PKT_HDR rx_script_6a_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0x36, 0xf4, 0x75, 0x2d}},      /* SCID */
@@ -850,7 +870,6 @@ static const QUIC_PKT_HDR rx_script_6b_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0x36, 0xf4, 0x75, 0x2d}},      /* SCID */
@@ -925,7 +944,6 @@ static const QUIC_PKT_HDR rx_script_6c_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},                           /* DCID */
     {0, {0}},                           /* SCID */
@@ -947,32 +965,34 @@ static const struct rx_test_op rx_script_6[] = {
     RX_OP_ADD_RX_DCID(empty_conn_id)
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_6_c2s_init_dcid)
     RX_OP_INJECT_N(6)
-    RX_OP_CHECK_PKT_N(6a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6a)
     RX_OP_CHECK_NO_PKT() /* not got secret for next packet yet */
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_HANDSHAKE,
                       QRL_SUITE_AES256GCM, rx_script_6_handshake_secret)
-    RX_OP_CHECK_PKT_N(6b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6b)
     RX_OP_CHECK_NO_PKT() /* not got secret for next packet yet */
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                       QRL_SUITE_AES256GCM, rx_script_6_1rtt_secret)
-    RX_OP_CHECK_PKT_N(6c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6c)
     RX_OP_CHECK_NO_PKT()
 
-    /* Discard Initial EL and try injecting the packet again */
-    RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_INITIAL)
+    /* Try injecting the packet again */
     RX_OP_INJECT_N(6)
-    /* Initial packet is not output because we have discarded Initial keys */
-    RX_OP_CHECK_PKT_N(6b)
-    RX_OP_CHECK_PKT_N(6c)
+    /*
+     * Initial packet is not output due to receiving a Handshake packet causing
+     * auto-discard of Initial keys
+     */
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6c)
     RX_OP_CHECK_NO_PKT()
     /* Try again with discarded keys */
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_HANDSHAKE)
     RX_OP_INJECT_N(6)
-    RX_OP_CHECK_PKT_N(6c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6c)
     RX_OP_CHECK_NO_PKT()
     /* Try again */
     RX_OP_INJECT_N(6)
-    RX_OP_CHECK_PKT_N(6c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6c)
     RX_OP_CHECK_NO_PKT()
     /* Try again with discarded 1-RTT keys */
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_1RTT)
@@ -985,15 +1005,15 @@ static const struct rx_test_op rx_script_6[] = {
     RX_OP_INJECT_N(6)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_6_c2s_init_dcid)
-    RX_OP_CHECK_PKT_N(6a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6a)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_HANDSHAKE,
                       QRL_SUITE_AES256GCM, rx_script_6_handshake_secret)
-    RX_OP_CHECK_PKT_N(6b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6b)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                       QRL_SUITE_AES256GCM, rx_script_6_1rtt_secret)
-    RX_OP_CHECK_PKT_N(6c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(6c)
     RX_OP_CHECK_NO_PKT()
 
     RX_OP_END
@@ -1003,7 +1023,6 @@ static const struct rx_test_op rx_script_6[] = {
  * 7. Real World - S2C Multiple Packets
  *      - Initial, Handshake, 1-RTT (ChaCha20-Poly1305)
  */
-#ifndef OPENSSL_NO_CHACHA
 static const QUIC_CONN_ID rx_script_7_c2s_init_dcid = {
     4, {0xfa, 0x5d, 0xd6, 0x80}
 };
@@ -1154,7 +1173,6 @@ static const QUIC_PKT_HDR rx_script_7a_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0x03, 0x45, 0x0c, 0x7a}},      /* SCID */
@@ -1210,7 +1228,6 @@ static const QUIC_PKT_HDR rx_script_7b_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     1,          /* Version */
     {0, {0}},                           /* DCID */
     {4, {0x03, 0x45, 0x0c, 0x7a}},      /* SCID */
@@ -1284,7 +1301,6 @@ static const QUIC_PKT_HDR rx_script_7c_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},                           /* DCID */
     {0, {0}},                           /* SCID */
@@ -1306,32 +1322,34 @@ static const struct rx_test_op rx_script_7[] = {
     RX_OP_ADD_RX_DCID(empty_conn_id)
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_7_c2s_init_dcid)
     RX_OP_INJECT_N(7)
-    RX_OP_CHECK_PKT_N(7a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7a)
     RX_OP_CHECK_NO_PKT() /* not got secret for next packet yet */
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_HANDSHAKE,
                       QRL_SUITE_CHACHA20POLY1305, rx_script_7_handshake_secret)
-    RX_OP_CHECK_PKT_N(7b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7b)
     RX_OP_CHECK_NO_PKT() /* not got secret for next packet yet */
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                       QRL_SUITE_CHACHA20POLY1305, rx_script_7_1rtt_secret)
-    RX_OP_CHECK_PKT_N(7c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7c)
     RX_OP_CHECK_NO_PKT()
 
-    /* Discard Initial EL and try injecting the packet again */
-    RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_INITIAL)
+    /* Try injecting the packet again */
     RX_OP_INJECT_N(7)
-    /* Initial packet is not output because we have discarded Initial keys */
-    RX_OP_CHECK_PKT_N(7b)
-    RX_OP_CHECK_PKT_N(7c)
+    /*
+     * Initial packet is not output due to receiving a Handshake packet causing
+     * auto-discard of Initial keys
+     */
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7c)
     RX_OP_CHECK_NO_PKT()
     /* Try again with discarded keys */
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_HANDSHAKE)
     RX_OP_INJECT_N(7)
-    RX_OP_CHECK_PKT_N(7c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7c)
     RX_OP_CHECK_NO_PKT()
     /* Try again */
     RX_OP_INJECT_N(7)
-    RX_OP_CHECK_PKT_N(7c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7c)
     RX_OP_CHECK_NO_PKT()
     /* Try again with discarded 1-RTT keys */
     RX_OP_DISCARD_EL(QUIC_ENC_LEVEL_1RTT)
@@ -1344,20 +1362,19 @@ static const struct rx_test_op rx_script_7[] = {
     RX_OP_INJECT_N(7)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET_INITIAL(rx_script_7_c2s_init_dcid)
-    RX_OP_CHECK_PKT_N(7a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7a)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_HANDSHAKE,
                       QRL_SUITE_CHACHA20POLY1305, rx_script_7_handshake_secret)
-    RX_OP_CHECK_PKT_N(7b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7b)
     RX_OP_CHECK_NO_PKT()
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                       QRL_SUITE_CHACHA20POLY1305, rx_script_7_1rtt_secret)
-    RX_OP_CHECK_PKT_N(7c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(7c)
     RX_OP_CHECK_NO_PKT()
 
     RX_OP_END
 };
-#endif /* !defined(OPENSSL_NO_CHACHA) */
 
 /*
  * 8. Real World - S2C Multiple Packets with Peer Initiated Key Phase Update
@@ -1385,7 +1402,6 @@ static const QUIC_PKT_HDR rx_script_8a_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},   /* DCID */
     {0, {0}},   /* SCID */
@@ -1417,7 +1433,6 @@ static const QUIC_PKT_HDR rx_script_8b_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},   /* DCID */
     {0, {0}},   /* SCID */
@@ -1448,7 +1463,6 @@ static const QUIC_PKT_HDR rx_script_8c_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},   /* DCID */
     {0, {0}},   /* SCID */
@@ -1480,7 +1494,6 @@ static const QUIC_PKT_HDR rx_script_8d_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},   /* DCID */
     {0, {0}},   /* SCID */
@@ -1512,7 +1525,6 @@ static const QUIC_PKT_HDR rx_script_8e_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},   /* DCID */
     {0, {0}},   /* SCID */
@@ -1541,7 +1553,6 @@ static const QUIC_PKT_HDR rx_script_8f_expect_hdr = {
     2,          /* PN Length */
     0,          /* Partial */
     1,          /* Fixed */
-    0,          /* Unused */
     0,          /* Version */
     {0, {0}},   /* DCID */
     {0, {0}},   /* SCID */
@@ -1564,14 +1575,14 @@ static const struct rx_test_op rx_script_8[] = {
     RX_OP_PROVIDE_SECRET(QUIC_ENC_LEVEL_1RTT,
                          QRL_SUITE_AES128GCM, rx_script_8_1rtt_secret)
     /* Now the injected packet is successfully returned */
-    RX_OP_CHECK_PKT_N(8a)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8a)
     RX_OP_CHECK_NO_PKT()
     RX_OP_CHECK_KEY_EPOCH(0)
 
     /* Packet with new key phase */
     RX_OP_INJECT_N(8b)
     /* Packet is successfully decrypted and returned */
-    RX_OP_CHECK_PKT_N(8b)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8b)
     RX_OP_CHECK_NO_PKT()
     /* Key epoch has increased */
     RX_OP_CHECK_KEY_EPOCH(1)
@@ -1582,20 +1593,20 @@ static const struct rx_test_op rx_script_8[] = {
      */
     RX_OP_INJECT_N(8c)
     /* Should still be decrypted OK */
-    RX_OP_CHECK_PKT_N(8c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8c)
     RX_OP_CHECK_NO_PKT()
     /* Epoch has not changed */
     RX_OP_CHECK_KEY_EPOCH(1)
 
     /* Another packet with the new keys. */
     RX_OP_INJECT_N(8d)
-    RX_OP_CHECK_PKT_N(8d)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8d)
     RX_OP_CHECK_NO_PKT()
     RX_OP_CHECK_KEY_EPOCH(1)
 
     /* We can inject the old packet multiple times and it still works */
     RX_OP_INJECT_N(8c)
-    RX_OP_CHECK_PKT_N(8c)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8c)
     RX_OP_CHECK_NO_PKT()
     RX_OP_CHECK_KEY_EPOCH(1)
 
@@ -1616,13 +1627,13 @@ static const struct rx_test_op rx_script_8[] = {
     /* Move from COOLDOWN to NORMAL and try again */
     RX_OP_KEY_UPDATE_TIMEOUT(1)
     RX_OP_INJECT_N(8e)
-    RX_OP_CHECK_PKT_N(8e)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8e)
     RX_OP_CHECK_NO_PKT()
     RX_OP_CHECK_KEY_EPOCH(2)
 
     /* Can still receive old packet */
     RX_OP_INJECT_N(8d)
-    RX_OP_CHECK_PKT_N(8d)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8d)
     RX_OP_CHECK_NO_PKT()
     RX_OP_CHECK_KEY_EPOCH(2)
 
@@ -1631,7 +1642,7 @@ static const struct rx_test_op rx_script_8[] = {
 
     /* Try a packet from epoch 3 */
     RX_OP_INJECT_N(8f)
-    RX_OP_CHECK_PKT_N(8f)
+    RX_OP_CHECK_PKT_FRAMES_OK_N(8f)
     RX_OP_CHECK_NO_PKT()
     RX_OP_CHECK_KEY_EPOCH(3)
 
@@ -1640,18 +1651,53 @@ static const struct rx_test_op rx_script_8[] = {
 
 static const struct rx_test_op *rx_scripts[] = {
     rx_script_1,
-#ifndef OPENSSL_NO_CHACHA
     rx_script_2,
-#endif
     rx_script_3,
     rx_script_4,
     rx_script_5,
     rx_script_6,
-#ifndef OPENSSL_NO_CHACHA
     rx_script_7,
-#endif
     rx_script_8
 };
+
+static int cmp_pkt_hdr(const QUIC_PKT_HDR *a, const QUIC_PKT_HDR *b,
+                       const unsigned char *b_data, size_t b_len,
+                       int cmp_data)
+{
+    int ok = 1;
+
+    if (b_data == NULL) {
+        b_data = b->data;
+        b_len  = b->len;
+    }
+
+    if (!TEST_int_eq(a->type, b->type)
+        || !TEST_int_eq(a->spin_bit, b->spin_bit)
+        || !TEST_int_eq(a->key_phase, b->key_phase)
+        || !TEST_int_eq(a->pn_len, b->pn_len)
+        || !TEST_int_eq(a->partial, b->partial)
+        || !TEST_int_eq(a->fixed, b->fixed)
+        || !TEST_uint_eq(a->version, b->version)
+        || !TEST_true(ossl_quic_conn_id_eq(&a->dst_conn_id, &b->dst_conn_id))
+        || !TEST_true(ossl_quic_conn_id_eq(&a->src_conn_id, &b->src_conn_id))
+        || !TEST_mem_eq(a->pn, sizeof(a->pn), b->pn, sizeof(b->pn))
+        || !TEST_size_t_eq(a->token_len, b->token_len)
+        || !TEST_uint64_t_eq(a->len, b->len))
+        ok = 0;
+
+    if (a->token_len > 0 && b->token_len > 0
+        && !TEST_mem_eq(a->token, a->token_len, b->token, b->token_len))
+        ok = 0;
+
+    if ((a->token_len == 0 && !TEST_ptr_null(a->token))
+        || (b->token_len == 0 && !TEST_ptr_null(b->token)))
+        ok = 0;
+
+    if (cmp_data && !TEST_mem_eq(a->data, a->len, b_data, b_len))
+        ok = 0;
+
+    return ok;
+}
 
 struct rx_state {
     QUIC_DEMUX         *demux;
@@ -1660,13 +1706,34 @@ struct rx_state {
     OSSL_QRX           *qrx;
     OSSL_QRX_ARGS       args;
 
-    /* Used for the RX depacketizer */
+    /* OSSL_ACKM with necessary data */
+    OSSL_ACKM          *ackm;
+    OSSL_CC_DATA       *ccdata;
+    OSSL_STATM          statm;       /* NOT the state machine! */
+
+    /* Used for the RX depacketizer, and wraps the |qrx| and |ackm| */
     SSL_CTX            *quic_ssl_ctx;
     QUIC_CONNECTION    *quic_conn;
 };
 
 static void rx_state_teardown(struct rx_state *s)
 {
+    if (s->ackm != NULL) {
+        ossl_ackm_free(s->ackm);
+        ossl_quic_conn_set_ackm(s->quic_conn, NULL);
+        s->ackm = NULL;
+    }
+    if (s->ccdata != NULL) {
+        ossl_cc_dummy_method.free(s->ccdata);
+        s->ccdata = NULL;
+    }
+
+    if (s->qrx != NULL) {
+        ossl_qrx_free(s->qrx);
+        ossl_quic_conn_set_qrx(s->quic_conn, NULL);
+        s->qrx = NULL;
+    }
+
     if (s->quic_conn != NULL) {
         SSL_free((SSL *)s->quic_conn);
         s->quic_conn = NULL;
@@ -1676,11 +1743,6 @@ static void rx_state_teardown(struct rx_state *s)
         s->quic_ssl_ctx = NULL;
     }
 
-    if (s->qrx != NULL) {
-        ossl_qrx_free(s->qrx);
-        s->qrx = NULL;
-    }
-
     if (s->demux != NULL) {
         ossl_quic_demux_free(s->demux);
         s->demux = NULL;
@@ -1688,6 +1750,13 @@ static void rx_state_teardown(struct rx_state *s)
 }
 
 static uint64_t time_counter = 0;
+
+static OSSL_TIME fake_now(void *ignored)
+{
+    OSSL_TIME f = {0};
+
+    return f;
+}
 
 static OSSL_TIME expected_time(uint64_t counter)
 {
@@ -1704,6 +1773,7 @@ static int rx_state_ensure(struct rx_state *s)
     if (s->demux == NULL
         && !TEST_ptr(s->demux = ossl_quic_demux_new(NULL,
                                                     s->args.short_conn_id_len,
+                                                    1500,
                                                     fake_time,
                                                     NULL)))
         return 0;
@@ -1719,12 +1789,39 @@ static int rx_state_ensure(struct rx_state *s)
     return 1;
 }
 
+static int rx_state_ensure_for_frames(struct rx_state *s)
+{
+    SSL *qs;
+
+    if (!rx_state_ensure(s))
+        return 0;
+
+    /* Initialise ACK manager and congestion controller. */
+    if ((s->ccdata == NULL
+         && !TEST_ptr(s->ccdata = ossl_cc_dummy_method.new(NULL, NULL, NULL)))
+        || (s->ackm == NULL
+            && !TEST_ptr(s->ackm = ossl_ackm_new(fake_now, NULL, &s->statm,
+                                                 &ossl_cc_dummy_method,
+                                                 s->ccdata))))
+        return 0;
+
+    if (s->quic_conn == NULL
+        && (!TEST_ptr(s->quic_ssl_ctx
+                      = SSL_CTX_new_ex(NULL, NULL, OSSL_QUIC_client_method()))
+            || !TEST_ptr(qs = SSL_new(s->quic_ssl_ctx))
+            || !TEST_ptr(s->quic_conn = ossl_quic_conn_from_ssl(qs))
+            || !TEST_true(ossl_quic_conn_set_qrx(s->quic_conn, s->qrx))
+            || !TEST_true(ossl_quic_conn_set_ackm(s->quic_conn, s->ackm))))
+        return 0;
+    return 1;
+}
+
 static int rx_run_script(const struct rx_test_op *script)
 {
-    int testresult = 0;
+    int testresult = 0, pkt_outstanding = 0;
     struct rx_state s = {0};
     size_t i;
-    OSSL_QRX_PKT *pkt = NULL;
+    OSSL_QRX_PKT pkt = {0};
     const struct rx_test_op *op = script;
 
     for (; op->op != RX_TEST_OP_END; ++op)
@@ -1782,19 +1879,38 @@ static int rx_run_script(const struct rx_test_op *script)
                 if (!TEST_true(ossl_qrx_read_pkt(s.qrx, &pkt)))
                     goto err;
 
-                if (!TEST_ptr(pkt) || !TEST_ptr(pkt->hdr))
+                pkt_outstanding = 1;
+                if (!TEST_ptr(pkt.hdr))
                     goto err;
 
-                if (!TEST_mem_eq(pkt->hdr->data, pkt->hdr->len,
+                if (!TEST_mem_eq(pkt.hdr->data, pkt.hdr->len,
                                  op->buf, op->buf_len))
                     goto err;
 
-                if (!TEST_true(cmp_pkt_hdr(pkt->hdr, op->hdr,
+                if (!TEST_true(cmp_pkt_hdr(pkt.hdr, op->hdr,
                                            op->buf, op->buf_len, 1)))
                     goto err;
 
-                ossl_qrx_pkt_release(pkt);
-                pkt = NULL;
+                switch (op->subop) {
+                case RX_TEST_OP_CHECK_PKT_FRAMES_OK:
+                    if (!TEST_true(rx_state_ensure_for_frames(&s)))
+                        goto err;
+                    pkt_outstanding = 0;
+                    if (!TEST_true(ossl_quic_handle_frames(s.quic_conn, &pkt)))
+                        goto err;
+                    break;
+                case RX_TEST_OP_CHECK_PKT_FRAMES_INVALID:
+                    if (!TEST_true(rx_state_ensure_for_frames(&s)))
+                        goto err;
+                    pkt_outstanding = 0;
+                    if (!TEST_false(ossl_quic_handle_frames(s.quic_conn, &pkt)))
+                        goto err;
+                    break;
+                default:
+                    pkt_outstanding = 0;
+                    ossl_qrx_release_pkt(s.qrx, pkt.handle);
+                    break;
+                }
                 break;
             case RX_TEST_OP_CHECK_NO_PKT:
                 if (!TEST_true(rx_state_ensure(&s)))
@@ -1833,7 +1949,8 @@ static int rx_run_script(const struct rx_test_op *script)
 
     testresult = 1;
 err:
-    ossl_qrx_pkt_release(pkt);
+    if (pkt_outstanding)
+        ossl_qrx_release_pkt(s.qrx, pkt.handle);
     rx_state_teardown(&s);
     return testresult;
 }
@@ -1887,7 +2004,6 @@ static const struct pkt_hdr_test pkt_hdr_test_1 = {
         2,                      /* PN length */
         0,                      /* partial */
         1,                      /* fixed */
-        0,                      /* unused */
         1,                      /* version */
         { 0, {0} },             /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -1934,7 +2050,6 @@ static const struct pkt_hdr_test pkt_hdr_test_2 = {
         2,                      /* PN length */
         0,                      /* partial */
         1,                      /* fixed */
-        0,                      /* unused */
         1,                      /* version */
         { 0, {0} },             /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -1982,7 +2097,6 @@ static const struct pkt_hdr_test pkt_hdr_test_3 = {
         2,                      /* PN length */
         0,                      /* partial */
         1,                      /* fixed */
-        0,                      /* unused */
         1,                      /* version */
         { 3, {0x70, 0x71, 0x72} },                                /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -2024,7 +2138,6 @@ static const struct pkt_hdr_test pkt_hdr_test_4 = {
         1,                      /* PN length */
         0,                      /* partial */
         1,                      /* fixed */
-        0,                      /* unused */
         1,                      /* version */
         { 3, {0x70, 0x71, 0x72} },                                /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -2065,8 +2178,7 @@ static const struct pkt_hdr_test pkt_hdr_test_5 = {
         0,                          /* key phase */
         1,                          /* PN length */
         0,                          /* partial */
-        1,                          /* fixed */
-        0,                          /* unused */
+        1,                      /* fixed */
         1,                          /* version */
         { 3, {0x70, 0x71, 0x72} },                                /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -2106,7 +2218,6 @@ static const struct pkt_hdr_test pkt_hdr_test_6 = {
         0,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         1,                          /* version */
         { 3, {0x70, 0x71, 0x72} },                                /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -2142,7 +2253,6 @@ static const struct pkt_hdr_test pkt_hdr_test_7 = {
         3,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         0,                          /* version */
         { 3, {0x70, 0x71, 0x72} },  /* DCID */
         { 0, {0} },                 /* SCID */
@@ -2178,7 +2288,6 @@ static const struct pkt_hdr_test pkt_hdr_test_8 = {
         3,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         0,                          /* version */
         { 3, {0x70, 0x71, 0x72} },  /* DCID */
         { 0, {0} },                 /* SCID */
@@ -2214,7 +2323,6 @@ static const struct pkt_hdr_test pkt_hdr_test_9 = {
         3,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         0,                          /* version */
         { 3, {0x70, 0x71, 0x72} },  /* DCID */
         { 0, {0} },                 /* SCID */
@@ -2256,7 +2364,6 @@ static const struct pkt_hdr_test pkt_hdr_test_10 = {
         4,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         1,                          /* version */
         { 3, {0x70, 0x71, 0x72} },                                /* DCID */
         { 8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5 } }, /* SCID */
@@ -2292,7 +2399,6 @@ static const struct pkt_hdr_test pkt_hdr_test_11 = {
         4,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         0,                          /* version */
         { 3, {0x70, 0x71, 0x72} },  /* DCID */
         { 0, {0} },                 /* SCID */
@@ -2327,7 +2433,6 @@ static const struct pkt_hdr_test pkt_hdr_test_12 = {
         0,                          /* PN length */
         0,                          /* partial */
         1,                          /* fixed */
-        0,                          /* unused */
         0,                          /* version */
         { 3, {0x70, 0x71, 0x72} },  /* DCID */
         { 2, {0x81, 0x82} },        /* SCID */
@@ -2362,7 +2467,6 @@ static const struct pkt_hdr_test pkt_hdr_test_13 = {
         0,                          /* PN length */
         0,                          /* partial */
         0,                          /* fixed */
-        0,                          /* unused */
         0,                          /* version */
         { 3, {0x70, 0x71, 0x72} },  /* DCID */
         { 2, {0x81, 0x82} },        /* SCID */
@@ -2496,16 +2600,7 @@ static int test_wire_pkt_hdr_actual(int tidx, int repeat, int cipher,
             hpr_key_len   = 32;
             break;
         case 2:
-            /*
-             * In a build without CHACHA, we rerun the AES 256 tests.
-             * Removing all dependence on CHACHA is more difficult and these
-             * tests are fast enough.
-             */
-#ifndef OPENSSL_NO_CHACHA
             hpr_cipher_id = QUIC_HDR_PROT_CIPHER_CHACHA;
-#else
-            hpr_cipher_id = QUIC_HDR_PROT_CIPHER_AES_256;
-#endif
             hpr_key_len   = 32;
             break;
         default:
@@ -2675,9 +2770,9 @@ static int test_hdr_prot_stats(void)
      */
     for (cipher = 0; cipher < HPR_CIPHER_COUNT; ++cipher)
         for (i = 0; i < OSSL_NELEM(counts_u[0]); ++i) {
-            if (!TEST_uint_gt(counts_u[cipher][i], 0))
+            if (!TEST_true(counts_u[cipher][i]))
                 goto err;
-            if (!TEST_uint_gt(counts_c[cipher][i], 0))
+            if (!TEST_true(counts_c[cipher][i]))
                 goto err;
         }
 
@@ -2895,7 +2990,6 @@ static QUIC_PKT_HDR tx_script_1_hdr = {
     4,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     1,                          /* version */
     {8, {0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08}}, /* DCID */
     { 0, {0} },                 /* SCID */
@@ -2959,7 +3053,6 @@ static QUIC_PKT_HDR tx_script_2_hdr = {
     2,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     1,                          /* version */
     { 0, {0} },                 /* DCID */
     {8, {0xf0, 0x67, 0xa5, 0x50, 0x2a, 0x42, 0x62, 0xb5}}, /* SCID */
@@ -2987,7 +3080,6 @@ static const struct tx_test_op tx_script_2[] = {
     TX_OP_END
 };
 
-#ifndef OPENSSL_NO_CHACHA
 /* 3. RFC 9001 - A.5 ChaCha20-Poly1305 Short Header Packet */
 static const unsigned char tx_script_3_body[] = {
     0x01
@@ -3010,7 +3102,6 @@ static QUIC_PKT_HDR tx_script_3_hdr = {
     3,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     0,                          /* version */
     { 0, {0} },                 /* DCID */
     { 0, {0} },                 /* SCID */
@@ -3037,7 +3128,6 @@ static const struct tx_test_op tx_script_3[] = {
     TX_OP_WRITE_CHECK(3)
     TX_OP_END
 };
-#endif /* !defined(OPENSSL_NO_CHACHA) */
 
 /* 4. Real World - AES-128-GCM Key Update */
 static const unsigned char tx_script_4_secret[] = {
@@ -3067,7 +3157,6 @@ static QUIC_PKT_HDR tx_script_4a_hdr = {
     2,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     0,                          /* version */
     { 4, {0x6e, 0x4e, 0xbd, 0x49} }, /* DCID */
     { 0, {0} },                 /* SCID */
@@ -3110,7 +3199,6 @@ static QUIC_PKT_HDR tx_script_4b_hdr = {
     2,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     0,                          /* version */
     { 4, {0x6e, 0x4e, 0xbd, 0x49} }, /* DCID */
     { 0, {0} },                 /* SCID */
@@ -3153,7 +3241,6 @@ static QUIC_PKT_HDR tx_script_4c_hdr = {
     2,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     0,                          /* version */
     { 4, {0x6e, 0x4e, 0xbd, 0x49} }, /* DCID */
     { 0, {0} },                 /* SCID */
@@ -3223,7 +3310,6 @@ static QUIC_PKT_HDR tx_script_5_hdr = {
     0,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     1,                          /* version */
     { 0, {0} },                 /* DCID */
     { 4, {0xa9, 0x20, 0xcc, 0xc2} },   /* SCID */
@@ -3274,7 +3360,6 @@ static QUIC_PKT_HDR tx_script_6_hdr = {
     0,                          /* PN length */
     0,                          /* partial */
     0,                          /* fixed */
-    0,                          /* unused */
     0,                          /* version */
     { 0, {0} },                 /* DCID */
     { 12, {0x35, 0x3c, 0x1b, 0x97, 0xca, 0xf8, 0x99,
@@ -3305,9 +3390,7 @@ static const struct tx_test_op tx_script_6[] = {
 static const struct tx_test_op *const tx_scripts[] = {
     tx_script_1,
     tx_script_2,
-#ifndef OPENSSL_NO_CHACHA
     tx_script_3,
-#endif
     tx_script_4,
     tx_script_5,
     tx_script_6

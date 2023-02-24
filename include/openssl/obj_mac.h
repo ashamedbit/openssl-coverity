@@ -5094,11 +5094,6 @@
 #define NID_sm4_ccm             1249
 #define OBJ_sm4_ccm             OBJ_sm_scheme,104L,9L
 
-#define SN_sm4_xts              "SM4-XTS"
-#define LN_sm4_xts              "sm4-xts"
-#define NID_sm4_xts             1290
-#define OBJ_sm4_xts             OBJ_sm_scheme,104L,10L
-
 #define SN_hmac         "HMAC"
 #define LN_hmac         "hmac"
 #define NID_hmac                855
@@ -5176,9 +5171,6 @@
 #define NID_brainpoolP256r1             927
 #define OBJ_brainpoolP256r1             1L,3L,36L,3L,3L,2L,8L,1L,1L,7L
 
-#define SN_brainpoolP256r1tls13         "brainpoolP256r1tls13"
-#define NID_brainpoolP256r1tls13                1285
-
 #define SN_brainpoolP256t1              "brainpoolP256t1"
 #define NID_brainpoolP256t1             928
 #define OBJ_brainpoolP256t1             1L,3L,36L,3L,3L,2L,8L,1L,1L,8L
@@ -5195,9 +5187,6 @@
 #define NID_brainpoolP384r1             931
 #define OBJ_brainpoolP384r1             1L,3L,36L,3L,3L,2L,8L,1L,1L,11L
 
-#define SN_brainpoolP384r1tls13         "brainpoolP384r1tls13"
-#define NID_brainpoolP384r1tls13                1286
-
 #define SN_brainpoolP384t1              "brainpoolP384t1"
 #define NID_brainpoolP384t1             932
 #define OBJ_brainpoolP384t1             1L,3L,36L,3L,3L,2L,8L,1L,1L,12L
@@ -5205,9 +5194,6 @@
 #define SN_brainpoolP512r1              "brainpoolP512r1"
 #define NID_brainpoolP512r1             933
 #define OBJ_brainpoolP512r1             1L,3L,36L,3L,3L,2L,8L,1L,1L,13L
-
-#define SN_brainpoolP512r1tls13         "brainpoolP512r1tls13"
-#define NID_brainpoolP512r1tls13                1287
 
 #define SN_brainpoolP512t1              "brainpoolP512t1"
 #define NID_brainpoolP512t1             934
@@ -5597,14 +5583,6 @@
 #define LN_oracle_jdk_trustedkeyusage           "Trusted key usage (Oracle)"
 #define NID_oracle_jdk_trustedkeyusage          1283
 #define OBJ_oracle_jdk_trustedkeyusage          OBJ_oracle,746875L,1L,1L
-
-#define SN_brotli               "brotli"
-#define LN_brotli               "Brotli compression"
-#define NID_brotli              1288
-
-#define SN_zstd         "zstd"
-#define LN_zstd         "Zstandard compression"
-#define NID_zstd                1289
 
 #endif /* OPENSSL_OBJ_MAC_H */
 

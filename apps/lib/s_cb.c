@@ -258,8 +258,7 @@ static const char *get_sigtype(int nid)
         return "gost2012_512";
 
     default:
-        /* Try to output provider-registered sig alg name */
-        return OBJ_nid2sn(nid);
+        return NULL;
     }
 }
 
@@ -560,7 +559,6 @@ static STRINT_PAIR handshakes[] = {
     {", CertificateStatus", SSL3_MT_CERTIFICATE_STATUS},
     {", SupplementalData", SSL3_MT_SUPPLEMENTAL_DATA},
     {", KeyUpdate", SSL3_MT_KEY_UPDATE},
-    {", CompressedCertificate", SSL3_MT_COMPRESSED_CERTIFICATE},
 #ifndef OPENSSL_NO_NEXTPROTONEG
     {", NextProto", SSL3_MT_NEXT_PROTO},
 #endif
@@ -687,7 +685,6 @@ static STRINT_PAIR tlsext_types[] = {
 #ifdef TLSEXT_TYPE_extended_master_secret
     {"extended master secret", TLSEXT_TYPE_extended_master_secret},
 #endif
-    {"compress certificate", TLSEXT_TYPE_compress_certificate},
     {"key share", TLSEXT_TYPE_key_share},
     {"supported versions", TLSEXT_TYPE_supported_versions},
     {"psk", TLSEXT_TYPE_psk},

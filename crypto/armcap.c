@@ -17,36 +17,15 @@
 #include <sys/sysctl.h>
 #endif
 #include "internal/cryptlib.h"
-#ifndef _WIN32
 #include <unistd.h>
-#else
-#include <windows.h>
-#endif
+
 #include "arm_arch.h"
 
 unsigned int OPENSSL_armcap_P = 0;
 unsigned int OPENSSL_arm_midr = 0;
 unsigned int OPENSSL_armv8_rsa_neonized = 0;
 
-#ifdef _WIN32
-void OPENSSL_cpuid_setup(void)
-{
-    OPENSSL_armcap_P |= ARMV7_NEON;
-    OPENSSL_armv8_rsa_neonized = 1;
-    if (IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE)) {
-        // These are all covered by one call in Windows
-        OPENSSL_armcap_P |= ARMV8_AES;
-        OPENSSL_armcap_P |= ARMV8_PMULL;
-        OPENSSL_armcap_P |= ARMV8_SHA1;
-        OPENSSL_armcap_P |= ARMV8_SHA256;
-    }
-}
-
-uint32_t OPENSSL_rdtsc(void)
-{
-    return 0;
-}
-#elif __ARM_MAX_ARCH__<7
+#if __ARM_MAX_ARCH__<7
 void OPENSSL_cpuid_setup(void)
 {
 }
@@ -76,7 +55,6 @@ void _armv8_pmull_probe(void);
 # ifdef __aarch64__
 void _armv8_sm3_probe(void);
 void _armv8_sm4_probe(void);
-void _armv8_eor3_probe(void);
 void _armv8_sha512_probe(void);
 unsigned int _armv8_cpuid_probe(void);
 void _armv8_sve_probe(void);
@@ -254,8 +232,7 @@ void OPENSSL_cpuid_setup(void)
             OPENSSL_armcap_P |= ARMV8_SHA3;
             len = sizeof(uarch);
             if ((sysctlbyname("machdep.cpu.brand_string", uarch, &len, NULL, 0) == 0) &&
-               ((strncmp(uarch, "Apple M1", 8) == 0) ||
-                (strncmp(uarch, "Apple M2", 8) == 0)))
+                (strncmp(uarch, "Apple M1", 8) == 0))
                 OPENSSL_armcap_P |= ARMV8_UNROLL8_EOR3;
         }
     }
@@ -356,7 +333,6 @@ void OPENSSL_cpuid_setup(void)
         if (sigsetjmp(ill_jmp, 1) == 0) {
             _armv8_sm3_probe();
             OPENSSL_armcap_P |= ARMV8_SM3;
-        }
         if (sigsetjmp(ill_jmp, 1) == 0) {
             _armv8_eor3_probe();
             OPENSSL_armcap_P |= ARMV8_SHA3;
@@ -400,8 +376,7 @@ void OPENSSL_cpuid_setup(void)
             OPENSSL_armv8_rsa_neonized = 1;
     }
     if ((MIDR_IS_CPU_MODEL(OPENSSL_arm_midr, ARM_CPU_IMP_ARM, ARM_CPU_PART_V1) ||
-         MIDR_IS_CPU_MODEL(OPENSSL_arm_midr, ARM_CPU_IMP_ARM, ARM_CPU_PART_N2) ||
-         MIDR_IS_CPU_MODEL(OPENSSL_arm_midr, ARM_CPU_IMP_ARM, ARM_CPU_PART_V2)) &&
+         MIDR_IS_CPU_MODEL(OPENSSL_arm_midr, ARM_CPU_IMP_ARM, ARM_CPU_PART_N2)) &&
         (OPENSSL_armcap_P & ARMV8_SHA3))
         OPENSSL_armcap_P |= ARMV8_UNROLL8_EOR3;
 # endif

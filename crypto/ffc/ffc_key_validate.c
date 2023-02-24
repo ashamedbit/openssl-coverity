@@ -24,11 +24,6 @@ int ossl_ffc_validate_public_key_partial(const FFC_PARAMS *params,
     BN_CTX *ctx = NULL;
 
     *ret = 0;
-    if (params == NULL || pub_key == NULL || params->p == NULL) {
-        *ret = FFC_ERROR_PASSED_NULL_PARAM;
-        return 0;
-    }
-
     ctx = BN_CTX_new_ex(NULL);
     if (ctx == NULL)
         goto err;
@@ -112,10 +107,6 @@ int ossl_ffc_validate_private_key(const BIGNUM *upper, const BIGNUM *priv,
 
     *ret = 0;
 
-    if (priv == NULL || upper == NULL) {
-        *ret = FFC_ERROR_PASSED_NULL_PARAM;
-        goto err;
-    }
     if (BN_cmp(priv, BN_value_one()) < 0) {
         *ret |= FFC_ERROR_PRIVKEY_TOO_SMALL;
         goto err;

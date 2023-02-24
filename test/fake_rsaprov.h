@@ -12,4 +12,3 @@
 /* Fake RSA provider implementation */
 OSSL_PROVIDER *fake_rsa_start(OSSL_LIB_CTX *libctx);
 void fake_rsa_finish(OSSL_PROVIDER *p);
-OSSL_PARAM *fake_rsa_key_params(int priv);

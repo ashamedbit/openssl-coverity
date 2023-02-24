@@ -390,8 +390,10 @@ static int drbg_hash_new(PROV_DRBG *ctx)
     PROV_DRBG_HASH *hash;
 
     hash = OPENSSL_secure_zalloc(sizeof(*hash));
-    if (hash == NULL)
+    if (hash == NULL) {
+        ERR_raise(ERR_LIB_PROV, ERR_R_MALLOC_FAILURE);
         return 0;
+    }
 
     ctx->data = hash;
     ctx->seedlen = HASH_PRNG_MAX_SEEDLEN;

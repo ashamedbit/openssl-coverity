@@ -31,13 +31,16 @@ CT_POLICY_EVAL_CTX *CT_POLICY_EVAL_CTX_new_ex(OSSL_LIB_CTX *libctx,
     CT_POLICY_EVAL_CTX *ctx = OPENSSL_zalloc(sizeof(CT_POLICY_EVAL_CTX));
     OSSL_TIME now;
 
-    if (ctx == NULL)
+    if (ctx == NULL) {
+        ERR_raise(ERR_LIB_CT, ERR_R_MALLOC_FAILURE);
         return NULL;
+    }
 
     ctx->libctx = libctx;
     if (propq != NULL) {
         ctx->propq = OPENSSL_strdup(propq);
         if (ctx->propq == NULL) {
+            ERR_raise(ERR_LIB_CT, ERR_R_MALLOC_FAILURE);
             OPENSSL_free(ctx);
             return NULL;
         }

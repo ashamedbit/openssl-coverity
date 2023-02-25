@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2016 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2021 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -18,7 +18,7 @@ int ASN1_BIT_STRING_set(ASN1_BIT_STRING *x, unsigned char *d, int len)
     return ASN1_STRING_set(x, d, len);
 }
 
-int i2c_ASN1_BIT_STRING(ASN1_BIT_STRING *a, unsigned char **pp)
+int ossl_i2c_ASN1_BIT_STRING(ASN1_BIT_STRING *a, unsigned char **pp)
 {
     int ret, j, bits, len;
     unsigned char *p, *d;
@@ -76,8 +76,8 @@ int i2c_ASN1_BIT_STRING(ASN1_BIT_STRING *a, unsigned char **pp)
     return ret;
 }
 
-ASN1_BIT_STRING *c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
-                                     const unsigned char **pp, long len)
+ASN1_BIT_STRING *ossl_c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
+                                          const unsigned char **pp, long len)
 {
     ASN1_BIT_STRING *ret = NULL;
     const unsigned char *p;
@@ -110,8 +110,7 @@ ASN1_BIT_STRING *c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
      * We do this to preserve the settings.  If we modify the settings, via
      * the _set_bit function, we will recalculate on output
      */
-    ret->flags &= ~(ASN1_STRING_FLAG_BITS_LEFT | 0x07); /* clear */
-    ret->flags |= (ASN1_STRING_FLAG_BITS_LEFT | i); /* set */
+    ossl_asn1_string_set_bits_left(ret, i);
 
     if (len-- > 1) {            /* using one because of the bits left byte */
         s = OPENSSL_malloc((int)len);
@@ -125,16 +124,14 @@ ASN1_BIT_STRING *c2i_ASN1_BIT_STRING(ASN1_BIT_STRING **a,
     } else
         s = NULL;
 
-    ret->length = (int)len;
-    OPENSSL_free(ret->data);
-    ret->data = s;
+    ASN1_STRING_set0(ret, s, (int)len);
     ret->type = V_ASN1_BIT_STRING;
     if (a != NULL)
         (*a) = ret;
     *pp = p;
     return ret;
  err:
-    ASN1err(ASN1_F_C2I_ASN1_BIT_STRING, i);
+    ERR_raise(ERR_LIB_ASN1, i);
     if ((a == NULL) || (*a != ret))
         ASN1_BIT_STRING_free(ret);
     return NULL;
@@ -164,7 +161,7 @@ int ASN1_BIT_STRING_set_bit(ASN1_BIT_STRING *a, int n, int value)
             return 1;         /* Don't need to set */
         c = OPENSSL_clear_realloc(a->data, a->length, w + 1);
         if (c == NULL) {
-            ASN1err(ASN1_F_ASN1_BIT_STRING_SET_BIT, ERR_R_MALLOC_FAILURE);
+            ERR_raise(ERR_LIB_ASN1, ERR_R_MALLOC_FAILURE);
             return 0;
         }
         if (w + 1 - a->length > 0)

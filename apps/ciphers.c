@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -14,9 +14,10 @@
 #include "progs.h"
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+#include "s_apps.h"
 
 typedef enum OPTION_choice {
-    OPT_ERR = -1, OPT_EOF = 0, OPT_HELP,
+    OPT_COMMON,
     OPT_STDNAME,
     OPT_CONVERT,
     OPT_SSL3,
@@ -27,7 +28,7 @@ typedef enum OPTION_choice {
     OPT_PSK,
     OPT_SRP,
     OPT_CIPHERSUITES,
-    OPT_V, OPT_UPPER_V, OPT_S
+    OPT_V, OPT_UPPER_V, OPT_S, OPT_PROV_ENUM
 } OPTION_CHOICE;
 
 const OPTIONS ciphers_options[] = {
@@ -63,10 +64,11 @@ const OPTIONS ciphers_options[] = {
     {"psk", OPT_PSK, '-', "Include ciphersuites requiring PSK"},
 #endif
 #ifndef OPENSSL_NO_SRP
-    {"srp", OPT_SRP, '-', "Include ciphersuites requiring SRP"},
+    {"srp", OPT_SRP, '-', "(deprecated) Include ciphersuites requiring SRP"},
 #endif
     {"ciphersuites", OPT_CIPHERSUITES, 's',
      "Configure the TLSv1.3 ciphersuites to use"},
+    OPT_PROV_OPTIONS,
 
     OPT_PARAMETERS(),
     {"cipher", 0, 0, "Cipher string to decode (optional)"},
@@ -80,12 +82,6 @@ static unsigned int dummy_psk(SSL *ssl, const char *hint, char *identity,
                               unsigned int max_psk_len)
 {
     return 0;
-}
-#endif
-#ifndef OPENSSL_NO_SRP
-static char *dummy_srp(SSL *ssl, void *arg)
-{
-    return "";
 }
 #endif
 
@@ -169,23 +165,28 @@ int ciphers_main(int argc, char **argv)
         case OPT_CIPHERSUITES:
             ciphersuites = opt_arg();
             break;
+        case OPT_PROV_CASES:
+            if (!opt_provider(o))
+                goto end;
+            break;
         }
     }
-    argv = opt_rest();
-    argc = opt_num_rest();
 
-    if (argc == 1)
-        ciphers = *argv;
-    else if (argc != 0)
+    /* Optional arg is cipher name. */
+    argv = opt_rest();
+    if (opt_num_rest() == 1)
+        ciphers = argv[0];
+    else if (!opt_check_rest_arg(NULL))
         goto opthelp;
 
     if (convert != NULL) {
         BIO_printf(bio_out, "OpenSSL cipher name: %s\n",
                    OPENSSL_cipher_name(convert));
+        ret = 0;
         goto end;
     }
 
-    ctx = SSL_CTX_new(meth);
+    ctx = SSL_CTX_new_ex(app_get0_libctx(), app_get0_propq(), meth);
     if (ctx == NULL)
         goto err;
     if (SSL_CTX_set_min_proto_version(ctx, min_version) == 0)
@@ -199,7 +200,7 @@ int ciphers_main(int argc, char **argv)
 #endif
 #ifndef OPENSSL_NO_SRP
     if (srp)
-        SSL_CTX_set_srp_client_pwd_callback(ctx, dummy_srp);
+        set_up_dummy_srp(ctx);
 #endif
 
     if (ciphersuites != NULL && !SSL_CTX_set_ciphersuites(ctx, ciphersuites)) {
@@ -225,6 +226,10 @@ int ciphers_main(int argc, char **argv)
     if (!verbose) {
         for (i = 0; i < sk_SSL_CIPHER_num(sk); i++) {
             const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
+
+            if (!ossl_assert(c != NULL))
+                continue;
+
             p = SSL_CIPHER_get_name(c);
             if (p == NULL)
                 break;
@@ -239,6 +244,9 @@ int ciphers_main(int argc, char **argv)
             const SSL_CIPHER *c;
 
             c = sk_SSL_CIPHER_value(sk, i);
+
+            if (!ossl_assert(c != NULL))
+                continue;
 
             if (Verbose) {
                 unsigned long id = SSL_CIPHER_get_id(c);

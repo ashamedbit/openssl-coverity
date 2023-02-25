@@ -1,5 +1,5 @@
 /*-
- * Copyright 2007-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2007-2021 The OpenSSL Project Authors. All Rights Reserved.
  * Copyright Nokia 2007-2019
  * Copyright Siemens AG 2015-2019
  *
@@ -108,7 +108,6 @@ struct ossl_crmf_certid_st {
     GENERAL_NAME *issuer;
     ASN1_INTEGER *serialNumber;
 } /* OSSL_CRMF_CERTID */;
-DECLARE_ASN1_DUP_FUNCTION(OSSL_CRMF_CERTID)
 
 /*-
  * SinglePubInfo ::= SEQUENCE {
@@ -185,15 +184,10 @@ DECLARE_ASN1_FUNCTIONS(OSSL_CRMF_PKMACVALUE)
 typedef struct ossl_crmf_popoprivkey_st {
     int type;
     union {
-        ASN1_BIT_STRING *thisMessage; /* 0 */     /* Deprecated */
+        ASN1_BIT_STRING *thisMessage; /* 0 */ /* Deprecated */
         ASN1_INTEGER *subsequentMessage; /* 1 */
-        ASN1_BIT_STRING *dhMAC; /* 2 */           /* Deprecated */
+        ASN1_BIT_STRING *dhMAC; /* 2 */ /* Deprecated */
         OSSL_CRMF_PKMACVALUE *agreeMAC; /* 3 */
-        /*
-         * TODO: This is not ASN1_NULL but CMS_ENVELOPEDDATA which should be
-         * somehow taken from crypto/cms which exists now
-         * - this is not used anywhere so far
-         */
         ASN1_NULL *encryptedKey; /* 4 */
     } value;
 } OSSL_CRMF_POPOPRIVKEY;
@@ -310,20 +304,20 @@ DECLARE_ASN1_FUNCTIONS(OSSL_CRMF_OPTIONALVALIDITY)
  * }
  */
 struct ossl_crmf_certtemplate_st {
-    ASN1_INTEGER *version;           /* 0 */
-    ASN1_INTEGER *serialNumber;      /* 1 */ /* serialNumber MUST be omitted  */
-             /* This field is assigned by the CA during certificate creation  */
-    X509_ALGOR *signingAlg;          /* 2 */  /* signingAlg MUST be omitted   */
-             /* This field is assigned by the CA during certificate creation  */
-    X509_NAME *issuer;               /* 3 */
-    OSSL_CRMF_OPTIONALVALIDITY *validity; /* 4 */
-    X509_NAME *subject;              /* 5 */
-    X509_PUBKEY *publicKey;          /* 6 */
-    ASN1_BIT_STRING *issuerUID;      /* 7 */  /* deprecated in version 2      */
-                  /* According to rfc 3280: UniqueIdentifier  ::=  BIT STRING */
-    ASN1_BIT_STRING *subjectUID;     /* 8 */  /* deprecated in version 2      */
-                      /* Could be X509_EXTENSION*S*, but that's only cosmetic */
-    STACK_OF(X509_EXTENSION) *extensions; /* 9 */
+    ASN1_INTEGER *version;
+    ASN1_INTEGER *serialNumber; /* serialNumber MUST be omitted */
+    /* This field is assigned by the CA during certificate creation */
+    X509_ALGOR *signingAlg; /* signingAlg MUST be omitted */
+    /* This field is assigned by the CA during certificate creation */
+    const X509_NAME *issuer;
+    OSSL_CRMF_OPTIONALVALIDITY *validity;
+    const X509_NAME *subject;
+    X509_PUBKEY *publicKey;
+    ASN1_BIT_STRING *issuerUID; /* deprecated in version 2 */
+    /* According to rfc 3280: UniqueIdentifier ::= BIT STRING */
+    ASN1_BIT_STRING *subjectUID; /* deprecated in version 2 */
+    /* Could be X509_EXTENSION*S*, but that's only cosmetic */
+    STACK_OF(X509_EXTENSION) *extensions;
 } /* OSSL_CRMF_CERTTEMPLATE */;
 
 /*-
@@ -336,13 +330,11 @@ struct ossl_crmf_certtemplate_st {
 struct ossl_crmf_certrequest_st {
     ASN1_INTEGER *certReqId;
     OSSL_CRMF_CERTTEMPLATE *certTemplate;
-    /* TODO: make OSSL_CRMF_CONTROLS out of that - but only cosmetical */
     STACK_OF(OSSL_CRMF_ATTRIBUTETYPEANDVALUE) *controls;
 } /* OSSL_CRMF_CERTREQUEST */;
 DECLARE_ASN1_FUNCTIONS(OSSL_CRMF_CERTREQUEST)
 DECLARE_ASN1_DUP_FUNCTION(OSSL_CRMF_CERTREQUEST)
 
-/* TODO: isn't there a better way to have this for ANY type? */
 struct ossl_crmf_attributetypeandvalue_st {
     ASN1_OBJECT *type;
     union {
@@ -390,5 +382,4 @@ struct ossl_crmf_msg_st {
     /* 1 */
     STACK_OF(OSSL_CRMF_ATTRIBUTETYPEANDVALUE) *regInfo;
 } /* OSSL_CRMF_MSG */;
-/* DEFINE_STACK_OF(OSSL_CRMF_MSG) */
 #endif

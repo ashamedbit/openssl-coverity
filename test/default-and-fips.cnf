@@ -1,6 +1,9 @@
 openssl_conf = openssl_init
 
-.include fipsinstall.conf
+# Comment out the next line to ignore configuration errors
+config_diagnostics = 1
+
+.include fipsmodule.cnf
 
 [openssl_init]
 providers = provider_sect

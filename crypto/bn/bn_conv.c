@@ -1,5 +1,5 @@
 /*
- * Copyright 1995-2017 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -24,7 +24,7 @@ char *BN_bn2hex(const BIGNUM *a)
         return OPENSSL_strdup("0");
     buf = OPENSSL_malloc(a->top * BN_BYTES * 2 + 2);
     if (buf == NULL) {
-        BNerr(BN_F_BN_BN2HEX, ERR_R_MALLOC_FAILURE);
+        ERR_raise(ERR_LIB_BN, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     p = buf;
@@ -46,8 +46,8 @@ char *BN_bn2hex(const BIGNUM *a)
     return buf;
 }
 
-#ifndef FIPS_MODE
-/* No BIO_snprintf in FIPS_MODE */
+#ifndef FIPS_MODULE
+/* No BIO_snprintf in FIPS_MODULE */
 /* Must 'OPENSSL_free' the returned data */
 char *BN_bn2dec(const BIGNUM *a)
 {
@@ -71,7 +71,7 @@ char *BN_bn2dec(const BIGNUM *a)
     bn_data = OPENSSL_malloc(bn_data_num * sizeof(BN_ULONG));
     buf = OPENSSL_malloc(tbytes);
     if (buf == NULL || bn_data == NULL) {
-        BNerr(BN_F_BN_BN2DEC, ERR_R_MALLOC_FAILURE);
+        ERR_raise(ERR_LIB_BN, ERR_R_MALLOC_FAILURE);
         goto err;
     }
     if ((t = BN_dup(a)) == NULL)
@@ -142,7 +142,7 @@ int BN_hex2bn(BIGNUM **bn, const char *a)
         continue;
 
     if (i == 0 || i > INT_MAX / 4)
-        goto err;
+        return 0;
 
     num = i + neg;
     if (bn == NULL)
@@ -154,6 +154,10 @@ int BN_hex2bn(BIGNUM **bn, const char *a)
             return 0;
     } else {
         ret = *bn;
+        if (BN_get_flags(ret, BN_FLG_STATIC_DATA)) {
+            ERR_raise(ERR_LIB_BN, ERR_R_PASSED_INVALID_ARGUMENT);
+            return 0;
+        }
         BN_zero(ret);
     }
 

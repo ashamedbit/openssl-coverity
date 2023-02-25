@@ -3,7 +3,7 @@
 
 =head1 NAME
 
-openssl-crl - CRL utility
+openssl-crl - CRL command
 
 =head1 SYNOPSIS
 
@@ -11,19 +11,26 @@ B<openssl> B<crl>
 [B<-help>]
 [B<-inform> B<DER>|B<PEM>]
 [B<-outform> B<DER>|B<PEM>]
-[B<-keyform> B<DER>|B<PEM>|B<ENGINE>]
+[B<-key> I<filename>]
+[B<-keyform> B<DER>|B<PEM>|B<P12>]
+[B<-dateopt>]
 [B<-text>]
 [B<-in> I<filename>]
 [B<-out> I<filename>]
-[B<-nameopt> I<option>]
+[B<-gendelta> I<filename>]
+[B<-badsig>]
+[B<-verify>]
 [B<-noout>]
 [B<-hash>]
+[B<-hash_old>]
+[B<-fingerprint>]
+[B<-crlnumber>]
 [B<-issuer>]
 [B<-lastupdate>]
 [B<-nextupdate>]
+{- $OpenSSL::safe::opt_name_synopsis -}
 {- $OpenSSL::safe::opt_trust_synopsis -}
-
-=for openssl ifdef hash_old
+{- $OpenSSL::safe::opt_provider_synopsis -}
 
 =head1 DESCRIPTION
 
@@ -37,15 +44,24 @@ This command processes CRL files in DER or PEM format.
 
 Print out a usage message.
 
-=item B<-inform> B<DER>|B<PEM>, B<-outform> B<DER>|B<PEM>
+=item B<-inform> B<DER>|B<PEM>
 
-The input and output formats of the CRL; the default is B<PEM>.
-See L<openssl(1)/Format Options> for details.
+The CRL input format; unspecified by default.
+See L<openssl-format-options(1)> for details.
 
-=item B<-keyform> B<DER>|B<PEM>|B<ENGINE>
+=item B<-outform> B<DER>|B<PEM>
 
-The format of the private key file; the default is B<PEM>.
-See L<openssl(1)/Format Options> for details.
+The CRL output format; the default is B<PEM>.
+See L<openssl-format-options(1)> for details.
+
+=item B<-key> I<filename>
+
+The private key to be used to sign the CRL.
+
+=item B<-keyform> B<DER>|B<PEM>|B<P12>
+
+The format of the private key file; unspecified by default.
+See L<openssl-format-options(1)> for details.
 
 =item B<-in> I<filename>
 
@@ -57,18 +73,39 @@ option is not specified.
 Specifies the output filename to write to or standard output by
 default.
 
+=item B<-gendelta> I<filename>
+
+Output a comparison of the main CRL and the one specified here.
+
+=item B<-badsig>
+
+Corrupt the signature before writing it; this can be useful
+for testing.
+
+=item B<-dateopt>
+
+Specify the date output format. Values are: rfc_822 and iso_8601.
+Defaults to rfc_822.
+
 =item B<-text>
 
 Print out the CRL in text form.
 
-=item B<-nameopt> I<option>
+=item B<-verify>
 
-Option which determines how the subject or issuer names are displayed. See
-the description of B<-nameopt> in L<openssl-x509(1)>.
+Verify the signature in the CRL.
 
 =item B<-noout>
 
 Don't output the encoded version of the CRL.
+
+=item B<-fingerprint>
+
+Output the fingerprint of the CRL.
+
+=item B<-crlnumber>
+
+Output the number of the CRL.
 
 =item B<-hash>
 
@@ -92,7 +129,11 @@ Output the lastUpdate field.
 
 Output the nextUpdate field.
 
+{- $OpenSSL::safe::opt_name_item -}
+
 {- $OpenSSL::safe::opt_trust_item -}
+
+{- $OpenSSL::safe::opt_provider_item -}
 
 =back
 
@@ -104,7 +145,7 @@ Convert a CRL file from PEM to DER:
 
 Output the text form of a DER encoded certificate:
 
- openssl crl -in crl.der -inform DER -text -noout
+ openssl crl -in crl.der -text -noout
 
 =head1 BUGS
 
@@ -121,7 +162,7 @@ L<ossl_store-file(7)>
 
 =head1 COPYRIGHT
 
-Copyright 2000-2019 The OpenSSL Project Authors. All Rights Reserved.
+Copyright 2000-2021 The OpenSSL Project Authors. All Rights Reserved.
 
 Licensed under the Apache License 2.0 (the "License").  You may not use
 this file except in compliance with the License.  You can obtain a copy

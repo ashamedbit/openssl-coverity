@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2017-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -33,6 +33,23 @@ int s390x_kdsa(unsigned int fc, void *param, const unsigned char *in,
 void s390x_flip_endian32(unsigned char dst[32], const unsigned char src[32]);
 void s390x_flip_endian64(unsigned char dst[64], const unsigned char src[64]);
 
+int s390x_x25519_mul(unsigned char u_dst[32],
+                     const unsigned char u_src[32],
+                     const unsigned char d_src[32]);
+int s390x_x448_mul(unsigned char u_dst[56],
+                   const unsigned char u_src[56],
+                   const unsigned char d_src[56]);
+int s390x_ed25519_mul(unsigned char x_dst[32],
+                      unsigned char y_dst[32],
+                      const unsigned char x_src[32],
+                      const unsigned char y_src[32],
+                      const unsigned char d_src[32]);
+int s390x_ed448_mul(unsigned char x_dst[57],
+                    unsigned char y_dst[57],
+                    const unsigned char x_src[57],
+                    const unsigned char y_src[57],
+                    const unsigned char d_src[57]);
+
 /*
  * The field elements of OPENSSL_s390xcap_P are the 64-bit words returned by
  * the STFLE instruction followed by the 64-bit word pairs returned by
@@ -55,6 +72,9 @@ struct OPENSSL_s390xcap_st {
     unsigned long long kdsa[2];
 };
 
+#if defined(__GNUC__) && defined(__linux)
+__attribute__ ((visibility("hidden")))
+#endif
 extern struct OPENSSL_s390xcap_st OPENSSL_s390xcap_P;
 
 /* Max number of 64-bit words currently returned by STFLE */
@@ -105,6 +125,10 @@ extern struct OPENSSL_s390xcap_st OPENSSL_s390xcap_P;
 # define S390X_SHA3_256         33
 # define S390X_SHA3_384         34
 # define S390X_SHA3_512         35
+# define S390X_KECCAK_224       32
+# define S390X_KECCAK_256       33
+# define S390X_KECCAK_384       34
+# define S390X_KECCAK_512       35
 # define S390X_SHAKE_128        36
 # define S390X_SHAKE_256        37
 # define S390X_GHASH            65

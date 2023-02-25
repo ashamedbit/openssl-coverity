@@ -1,5 +1,5 @@
 #! /usr/bin/env perl
-# Copyright 2014-2018 The OpenSSL Project Authors. All Rights Reserved.
+# Copyright 2014-2020 The OpenSSL Project Authors. All Rights Reserved.
 # Copyright (c) 2014, Intel Corporation. All Rights Reserved.
 # Copyright (c) 2015 CloudFlare, Inc.
 #
@@ -74,7 +74,7 @@ if (!$addx && $win64 && ($flavour =~ /masm/ || $ENV{ASM} =~ /ml64/) &&
 	$addx = ($1>=12);
 }
 
-if (!$addx && `$ENV{CC} -v 2>&1` =~ /((?:^clang|LLVM) version|.*based on LLVM) ([3-9])\.([0-9]+)/) {
+if (!$addx && `$ENV{CC} -v 2>&1` =~ /((?:clang|LLVM) version|.*based on LLVM) ([0-9]+)\.([0-9]+)/) {
 	my $ver = $2 + $3/100.0;	# 3.1->3.01, 3.10->3.10
 	$avx = ($ver>=3.0) + ($ver>=3.01);
 	$addx = ($ver>=3.03);
@@ -3628,28 +3628,18 @@ $code.=<<___;
 
 	or	$acc5, $acc4			# see if result is zero
 	or	$acc0, $acc4
+	or	$acc1, $acc4			# !is_equal(U1, U2)
+
+	movq	%xmm2, $acc0			# in1infty | in2infty
+	movq	%xmm3, $acc1			# !is_equal(S1, S2)
+
+	or	$acc0, $acc4
 	or	$acc1, $acc4
 
+	# if (!is_equal(U1, U2) | in1infty | in2infty | !is_equal(S1, S2))
 	.byte	0x3e				# predict taken
-	jnz	.Ladd_proceed$x			# is_equal(U1,U2)?
-	movq	%xmm2, $acc0
-	movq	%xmm3, $acc1
-	test	$acc0, $acc0
-	jnz	.Ladd_proceed$x			# (in1infty || in2infty)?
-	test	$acc1, $acc1
-	jz	.Ladd_double$x			# is_equal(S1,S2)?
+	jnz	.Ladd_proceed$x
 
-	movq	%xmm0, $r_ptr			# restore $r_ptr
-	pxor	%xmm0, %xmm0
-	movdqu	%xmm0, 0x00($r_ptr)
-	movdqu	%xmm0, 0x10($r_ptr)
-	movdqu	%xmm0, 0x20($r_ptr)
-	movdqu	%xmm0, 0x30($r_ptr)
-	movdqu	%xmm0, 0x40($r_ptr)
-	movdqu	%xmm0, 0x50($r_ptr)
-	jmp	.Ladd_done$x
-
-.align	32
 .Ladd_double$x:
 	movq	%xmm1, $a_ptr			# restore $a_ptr
 	movq	%xmm0, $r_ptr			# restore $r_ptr
@@ -4748,4 +4738,4 @@ ___
 
 $code =~ s/\`([^\`]*)\`/eval $1/gem;
 print $code;
-close STDOUT;
+close STDOUT or die "error closing STDOUT: $!";

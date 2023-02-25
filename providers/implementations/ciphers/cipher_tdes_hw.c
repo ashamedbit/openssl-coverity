@@ -1,11 +1,17 @@
 /*
- * Copyright 1995-2019 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 1995-2020 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
  * in the file LICENSE in the source distribution or at
  * https://www.openssl.org/source/license.html
  */
+
+/*
+ * DES low level APIs are deprecated for public use, but still ok for internal
+ * use.
+ */
+#include "internal/deprecated.h"
 
 #include "prov/ciphercommon.h"
 #include "cipher_tdes.h"
@@ -14,8 +20,8 @@
 #define ks2 tks.ks[1]
 #define ks3 tks.ks[2]
 
-int cipher_hw_tdes_ede3_initkey(PROV_CIPHER_CTX *ctx, const unsigned char *key,
-                                size_t keylen)
+int ossl_cipher_hw_tdes_ede3_initkey(PROV_CIPHER_CTX *ctx,
+                                     const unsigned char *key, size_t keylen)
 {
     PROV_TDES_CTX *tctx = (PROV_TDES_CTX *)ctx;
     DES_cblock *deskey = (DES_cblock *)key;
@@ -39,8 +45,18 @@ int cipher_hw_tdes_ede3_initkey(PROV_CIPHER_CTX *ctx, const unsigned char *key,
     return 1;
 }
 
-int cipher_hw_tdes_cbc(PROV_CIPHER_CTX *ctx, unsigned char *out,
-                       const unsigned char *in, size_t inl)
+void ossl_cipher_hw_tdes_copyctx(PROV_CIPHER_CTX *dst,
+                                 const PROV_CIPHER_CTX *src)
+{
+    PROV_TDES_CTX *sctx = (PROV_TDES_CTX *)src;
+    PROV_TDES_CTX *dctx = (PROV_TDES_CTX *)dst;
+
+    *dctx = *sctx;
+    dst->ks = &dctx->tks.ks;
+}
+
+int ossl_cipher_hw_tdes_cbc(PROV_CIPHER_CTX *ctx, unsigned char *out,
+                            const unsigned char *in, size_t inl)
 {
     PROV_TDES_CTX *tctx = (PROV_TDES_CTX *)ctx;
 
@@ -62,8 +78,8 @@ int cipher_hw_tdes_cbc(PROV_CIPHER_CTX *ctx, unsigned char *out,
     return 1;
 }
 
-int cipher_hw_tdes_ecb(PROV_CIPHER_CTX *ctx, unsigned char *out,
-                       const unsigned char *in, size_t len)
+int ossl_cipher_hw_tdes_ecb(PROV_CIPHER_CTX *ctx, unsigned char *out,
+                            const unsigned char *in, size_t len)
 {
     size_t i;
     PROV_TDES_CTX *tctx = (PROV_TDES_CTX *)ctx;

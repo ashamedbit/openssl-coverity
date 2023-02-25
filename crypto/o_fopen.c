@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 The OpenSSL Project Authors. All Rights Reserved.
+ * Copyright 2016-2022 The OpenSSL Project Authors. All Rights Reserved.
  *
  * Licensed under the Apache License 2.0 (the "License").  You may not use
  * this file except in compliance with the License.  You can obtain a copy
@@ -25,7 +25,7 @@
 #  endif
 # endif
 
-#include "e_os.h"
+#include "internal/e_os.h"
 #include "internal/cryptlib.h"
 
 #if !defined(OPENSSL_NO_STDIO)
@@ -88,7 +88,7 @@ FILE *openssl_fopen(const char *filename, const char *mode)
             char lastchar;
 
             if ((newname = OPENSSL_malloc(strlen(filename) + 1)) == NULL) {
-                CRYPTOerr(CRYPTO_F_OPENSSL_FOPEN, ERR_R_MALLOC_FAILURE);
+                ERR_raise(ERR_LIB_CRYPTO, ERR_R_MALLOC_FAILURE);
                 return NULL;
             }
 
